@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#1B2C4F" />
+<title>TradeServ — Quote on site</title>
+<style>
+  :root{
+    /* AC Electrical palette: deep navy + bright sky-blue spark */
+    --blue:#1B2C4F; --blue-dark:#12203b; --amber:#34B3E4; --amber-dark:#1f93c2;
+    --bg:#eef2f8; --card:#ffffff; --ink:#1c2433; --muted:#6b7689; --line:#e1e7f1;
+    --green:#1f9d57; --red:#d64545; --shadow:0 2px 10px rgba(20,40,90,.08);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); font-size:16px; line-height:1.45;
+    max-width:520px; margin:0 auto; min-height:100vh; position:relative;
+  }
+  .topbar{
+    position:sticky; top:0; z-index:20; background:var(--blue); color:#fff;
+    display:flex; align-items:center; gap:10px; padding:12px 14px;
+    box-shadow:0 2px 8px rgba(0,0,0,.12);
+  }
+  .topbar .back{font-size:22px; line-height:1; background:none;border:none;color:#fff;cursor:pointer;padding:2px 6px;border-radius:8px}
+  .topbar h1{font-size:16px; margin:0; font-weight:650; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .topbar .logo{font-weight:800; letter-spacing:.3px}
+  .topbar .logo b{color:var(--amber)}
+  .tb-mic{display:flex;align-items:center;gap:6px;background:var(--amber);color:#06283b;border:none;border-radius:22px;padding:8px 13px;font-weight:700;font-size:13px;cursor:pointer}
+  .tb-mic:active{background:var(--amber-dark)}
+  .tb-demo{font-size:10px;opacity:.7;font-weight:700;letter-spacing:.5px}
+  .wrap{padding:16px 16px 96px}
+  h2{font-size:14px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin:22px 2px 10px; font-weight:700}
+  .card{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:16px; margin-bottom:12px}
+  .card.tap{cursor:pointer; transition:transform .06s ease}
+  .card.tap:active{transform:scale(.99)}
+  label{display:block; font-size:13px; font-weight:600; color:var(--muted); margin:12px 0 5px}
+  input,textarea,select{
+    width:100%; padding:12px 13px; border:1.5px solid var(--line); border-radius:10px;
+    font-size:16px; font-family:inherit; color:var(--ink); background:#fff;
+  }
+  input:focus,textarea:focus{outline:none; border-color:var(--blue)}
+  textarea{resize:vertical; min-height:90px; line-height:1.5}
+  .btn{
+    display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+    padding:15px; border:none; border-radius:12px; font-size:16px; font-weight:700;
+    cursor:pointer; margin-top:14px; font-family:inherit;
+  }
+  .btn.primary{background:var(--blue); color:#fff}
+  .btn.primary:active{background:var(--blue-dark)}
+  .btn.amber{background:var(--amber); color:#06283b}
+  .btn.amber:active{background:var(--amber-dark)}
+  .btn.ghost{background:#fff; color:var(--blue); border:1.5px solid var(--line)}
+  .btn.green{background:var(--green); color:#fff}
+  .btn.sm{padding:10px 14px; font-size:14px; width:auto; margin-top:0}
+  .row{display:flex; gap:10px}
+  .row > *{flex:1}
+  .muted{color:var(--muted)}
+  .small{font-size:13px}
+  .right{text-align:right}
+  .empty{text-align:center; color:var(--muted); padding:34px 20px}
+  .empty .ic{font-size:46px; margin-bottom:8px}
+  .joblist .card{display:flex; align-items:center; gap:12px}
+  .joblist .meta{flex:1; min-width:0}
+  .joblist .meta .nm{font-weight:700}
+  .joblist .meta .ad{font-size:13px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .badge{font-size:11px; font-weight:700; padding:4px 9px; border-radius:20px; white-space:nowrap}
+  .badge.draft{background:#fff3da; color:#9a6a00}
+  .badge.quoted{background:#e3f3ff; color:#0a5ca8}
+  .badge.sent{background:#e1f6ea; color:#127a44}
+  .fab{position:fixed; left:50%; transform:translateX(-50%); bottom:20px; width:min(488px,calc(100% - 32px)); z-index:15;}
+  /* field with mic */
+  .ip{position:relative}
+  .ip input{padding-right:50px}
+  .ip-mic{position:absolute; right:6px; top:50%; transform:translateY(-50%); width:38px;height:38px;border-radius:9px;border:none;background:#eaf6fd;color:var(--amber-dark);font-size:18px;cursor:pointer}
+  .ip-mic:active{background:#d3ecf8}
+  .hintline{font-size:12.5px;color:var(--muted);margin:4px 2px 0;display:flex;align-items:center;gap:5px}
+  /* sections */
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 2px}
+  .chip{background:#eef2f8;border:1px solid var(--line);border-radius:20px;padding:7px 13px;font-size:13px;font-weight:600;color:var(--blue);cursor:pointer}
+  .chip:active{background:#dde6f3}
+  .sec{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:11px;background:#fbfcfe}
+  .sec-top{display:flex;gap:8px;align-items:center;margin-bottom:9px}
+  .sec-title{flex:1;font-weight:700;font-size:16px;padding:9px 11px}
+  .sec-mic{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:var(--amber);color:#06283b;border:none;border-radius:10px;padding:9px 12px;font-weight:700;font-size:13px;cursor:pointer}
+  .sec-mic:active{background:var(--amber-dark)}
+  .sec-del{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0 4px}
+  /* quote */
+  .qsec-head{display:flex;align-items:center;gap:8px;margin:16px 0 4px}
+  .qsec-head .t{flex:1;font-weight:800;font-size:15px;color:var(--blue)}
+  .qsec-head .m{background:#eaf6fd;color:var(--amber-dark);border:none;border-radius:9px;padding:6px 10px;font-size:13px;font-weight:700;cursor:pointer}
+  .qline{display:flex; align-items:center; gap:8px; padding:11px 0; border-bottom:1px solid var(--line)}
+  .qline:last-child{border-bottom:none}
+  .qline .d{flex:1; min-width:0}
+  .qline .d .t{font-weight:600; font-size:15px}
+  .qline .d .s{font-size:12px; color:var(--muted)}
+  .qline .qty{width:52px}
+  .qline .qty input{padding:7px; text-align:center; font-size:15px}
+  .qline .amt{width:82px; text-align:right; font-weight:700; font-size:15px}
+  .qline .del{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0 2px}
+  .secsub{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);padding:8px 0 2px;font-weight:600}
+  .totrow{display:flex; justify-content:space-between; padding:7px 0; font-size:15px}
+  .totrow.big{font-size:21px; font-weight:800; border-top:2px solid var(--ink); margin-top:8px; padding-top:12px}
+  .totrow .lbl{color:var(--muted)}
+  .doc-head{text-align:center; padding:6px 0 14px; border-bottom:2px solid var(--blue); margin-bottom:6px}
+  .doc-head .co{font-size:20px;font-weight:800;color:var(--blue)}
+  .doc-head .tag{font-size:12px;color:var(--amber-dark);font-style:italic;margin-top:2px}
+  .doc-head .ti{font-size:13px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-top:6px}
+  .docsec{font-weight:800;color:var(--blue);font-size:14px;margin:12px 0 2px}
+  .kv{display:flex;justify-content:space-between;font-size:14px;padding:3px 0}
+  .note{background:#eaf6fd;border:1px solid #bfe6f8;border-radius:10px;padding:11px 13px;font-size:13px;color:#0c5a82;margin-bottom:12px}
+  .send-preview{background:#f5f8ff;border:1px dashed var(--blue);border-radius:12px;padding:14px;font-size:14px;white-space:pre-wrap;color:var(--ink)}
+  .successbox{text-align:center;padding:24px 10px}
+  .successbox .ic{width:74px;height:74px;border-radius:50%;background:var(--green);color:#fff;font-size:38px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+  .pricerow{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .pricerow .nm{flex:1;font-size:14px}
+  .pricerow .pin{width:96px}
+  .pricerow .pin input{padding:8px;text-align:right}
+  .hint{font-size:12px;color:var(--muted);margin-top:4px}
+  .seg{display:flex;background:#e7ebf3;border-radius:10px;padding:3px;margin-top:10px}
+  .seg button{flex:1;border:none;background:none;padding:9px;border-radius:8px;font-weight:600;font-size:14px;color:var(--muted);cursor:pointer}
+  .seg button.on{background:#fff;color:var(--blue);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  /* voice overlay */
+  #voice-ov{position:fixed;inset:0;background:rgba(12,22,44,.6);display:none;align-items:center;justify-content:center;z-index:50;padding:24px}
+  .ov-card{background:#fff;border-radius:20px;padding:26px 22px;max-width:380px;width:100%;text-align:center}
+  .ov-mic{width:80px;height:80px;border-radius:50%;background:var(--red);color:#fff;font-size:34px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;animation:pulse 1.3s infinite}
+  .ov-title{font-weight:800;font-size:17px}
+  .ov-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .ov-live{min-height:64px;background:#f5f8ff;border-radius:12px;padding:13px;font-size:15px;margin:14px 0 4px;text-align:left;color:var(--ink)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(214,69,69,.5)}70%{box-shadow:0 0 0 20px rgba(214,69,69,0)}100%{box-shadow:0 0 0 0 rgba(214,69,69,0)}}
+  .thumbs{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
+  .thumbs img{width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+"use strict";
+
+/* ---------------- DATA ---------------- */
+const DEFAULT_SETTINGS = {
+  company: "AC Electrical",
+  tagline: "Powering your world with precision and reliability.",
+  phone: "063 049 8081",
+  email: "acelec.pe@gmail.com",
+  vatNo: "",
+  materialMarkup: 25, labourRate: 350, travelFee: 250, vat: 15
+};
+
+const CATALOGUE = [
+  {id:"db18",  name:"Distribution board (18-way)", unit:"ea", cost:1450, labourHrs:2.5, kw:["distribution board","db board","consumer unit","db box","new board"," db "]},
+  {id:"cb20",  name:"Circuit breaker 20A",         unit:"ea", cost:85,   labourHrs:0.3, kw:["20 amp","20amp","twenty amp","20 a circuit","20a circuit","20a breaker"]},
+  {id:"cb16",  name:"Circuit breaker 16A",         unit:"ea", cost:80,   labourHrs:0.3, kw:["16 amp","16amp","sixteen amp","16a"]},
+  {id:"earth", name:"Earth leakage unit 63A",      unit:"ea", cost:420,  labourHrs:0.5, kw:["earth leakage","earth-leakage","earthleakage","earth leak"]},
+  {id:"c25",   name:"Cable 2.5mm² (per metre)",    unit:"m",  cost:18,   labourHrs:0.05,kw:["2.5","two point five","2,5"], cable:true},
+  {id:"c4",    name:"Cable 4mm² (per metre)",      unit:"m",  cost:28,   labourHrs:0.06,kw:["4mm","four mil","4 mil"], cable:true},
+  {id:"c6",    name:"Cable 6mm² (per metre)",      unit:"m",  cost:42,   labourHrs:0.07,kw:["6mm","six mil","6 mil"], cable:true},
+  {id:"dbl",   name:"Double socket (plug point)",  unit:"ea", cost:65,   labourHrs:0.5, kw:["double plug","double socket","double point","plug point","plug points","wall socket","socket outlet","plugs"]},
+  {id:"sgl",   name:"Single socket (plug point)",  unit:"ea", cost:45,   labourHrs:0.4, kw:["single plug","single socket","single point"]},
+  {id:"sw",    name:"Light switch (1-lever)",      unit:"ea", cost:55,   labourHrs:0.3, kw:["light switch","wall switch","one lever","1 lever"]},
+  {id:"dl",    name:"LED downlight",               unit:"ea", cost:95,   labourHrs:0.4, kw:["downlight","down light","recessed light","led light","led downlight","downlights"]},
+  {id:"iso",   name:"Isolator switch",             unit:"ea", cost:120,  labourHrs:0.5, kw:["isolator"]},
+  {id:"gel",   name:"Geyser element 3kW",          unit:"ea", cost:180,  labourHrs:1.0, kw:["geyser element","new element","replace element"]},
+  {id:"cond",  name:"Conduit / trunking (per m)",  unit:"m",  cost:22,   labourHrs:0.1, kw:["conduit","trunking"], cable:true}
+];
+
+const SECTION_CHIPS = ["Kitchen","Bathroom","Lounge","Bedroom","Outside","Garage","Roof","DB / Board","Geyser"];
+
+const DEMO_SECTIONS = [
+  {title:"Kitchen", text:"Replace the distribution board, an eighteen way board. Add two double plug points above the counter and one single plug point by the fridge. Replace the light switch at the door and put in four LED downlights. There is an earth leakage unit that needs replacing."},
+  {title:"Outside / Geyser", text:"Run a new twenty amp circuit to the geyser, about fifteen metres of two point five mil cable. Fit an isolator switch at the geyser."}
+];
+
+/* ---------------- STATE / STORAGE ---------------- */
+let state = { view:"jobs", jobId:null, settingsTab:"markups", activeSec:null };
+let data = load();
+let lastFocusId = null;
+
+function load(){
+  try{
+    const raw = localStorage.getItem("tradeserv");
+    if(raw){ const d=JSON.parse(raw); d.settings={...DEFAULT_SETTINGS, ...(d.settings||{})}; if(!d.jobs) d.jobs=[]; return d; }
+  }catch(e){}
+  return { settings:{...DEFAULT_SETTINGS}, jobs:[] };
+}
+function save(){ try{ localStorage.setItem("tradeserv", JSON.stringify(data)); }catch(e){} }
+function go(view, jobId){ state.view=view; if(jobId!==undefined) state.jobId=jobId; render(); window.scrollTo(0,0); }
+function currentJob(){ const j=data.jobs.find(x=>x.id===state.jobId); if(j) normalize(j); return j; }
+function normalize(job){
+  if(!job.sections){ job.sections = job.transcript ? [{id:uid(),title:"General",text:job.transcript}] : []; delete job.transcript; }
+}
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function rands(n){ return "R" + (Math.round(n*100)/100).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* ---------------- DEMO AI: text -> line items ---------------- */
+const NUMWORDS = {a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
+  eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50};
+const NUMALT = Object.keys(NUMWORDS).join("|");
+
+function wordOrDigit(tok){
+  if(tok==null) return null;
+  tok=String(tok).toLowerCase();
+  if(/^\d+$/.test(tok)) return parseInt(tok,10);
+  if(NUMWORDS[tok]!=null) return NUMWORDS[tok];
+  return null;
+}
+function qtyBefore(text, phrase){
+  const i=text.indexOf(phrase); if(i<0) return null;
+  const pre=text.slice(Math.max(0,i-26), i).trim();
+  const toks=pre.split(/[^a-z0-9]+/i).filter(Boolean);
+  for(let k=toks.length-1;k>=Math.max(0,toks.length-3);k--){ const n=wordOrDigit(toks[k]); if(n!=null) return n; }
+  return null;
+}
+function metresIn(text){
+  const m=text.match(new RegExp("(\\d+|"+NUMALT+")\\s*(?:metres|meters|meter|metre|m\\b)"));
+  return m?wordOrDigit(m[1]):null;
+}
+function firstNum(text){ const m=text.match(new RegExp("\\b(\\d+|"+NUMALT+")\\b")); return m?wordOrDigit(m[1]):null; }
+function numAfterTo(text){ const m=text.match(new RegExp("\\bto\\b\\s+(\\d+|"+NUMALT+")")); return m?wordOrDigit(m[1]):null; }
+
+function parseText(raw){
+  const t=(" "+(raw||"").toLowerCase()+" ").replace(/\s+/g," ");
+  const items=[]; const used=new Set();
+  for(const c of CATALOGUE){
+    let hit=false, qty=1, phrase=null;
+    for(const p of c.kw){ if(t.includes(p)){ hit=true; phrase=p; const q=qtyBefore(t,p); if(q!=null) qty=q; break; } }
+    if(!hit) continue;
+    if(c.cable){ const m=metresIn(t); qty = m!=null?m:(c.id==="c25"?15:5); }
+    if(used.has(c.id)) continue; used.add(c.id);
+    items.push({ catId:c.id, name:c.name, unit:c.unit, cost:c.cost, labourHrs:c.labourHrs, qty });
+  }
+  return items;
+}
+
+function buildQuote(job){
+  normalize(job);
+  const items=[];
+  (job.sections||[]).forEach(sec=>{
+    parseText(sec.text).forEach(it=>{ it.sectionId=sec.id; it.sectionTitle=sec.title; items.push(it); });
+  });
+  job.lineItems=items;
+  job.status=items.length?"quoted":"draft";
+  if(job.travel==null) job.travel=data.settings.travelFee;
+  save();
+}
+
+function totals(job){
+  const s=data.settings, mk=1+(s.materialMarkup/100);
+  let matSell=0, hours=0;
+  (job.lineItems||[]).forEach(li=>{ matSell+=li.cost*mk*li.qty; hours+=li.labourHrs*li.qty; });
+  const labour=hours*s.labourRate;
+  const travel=job.travel!=null?job.travel:s.travelFee;
+  const sub=matSell+labour+travel, vat=sub*(s.vat/100);
+  return { matSell, hours, labour, travel, sub, vat, total:sub+vat };
+}
+function lineSell(li){ return li.cost*(1+data.settings.materialMarkup/100); }
+
+/* ---------------- VOICE COMMAND PARSING ---------------- */
+const ALIAS={cable:"c25", wire:"c25", breaker:"cb20", board:"db18", plug:"dbl", socket:"dbl"};
+function findItem(text){
+  const t=(" "+text.toLowerCase()+" ").replace(/\s+/g," ");
+  for(const c of CATALOGUE){ for(const p of c.kw){ if(t.includes(p)) return c; } }
+  for(const k in ALIAS){ if(t.includes(" "+k)) return CATALOGUE.find(c=>c.id===ALIAS[k]); }
+  return null;
+}
+function detectSection(job, text){
+  const t=text.toLowerCase();
+  for(const sec of (job.sections||[])){ if(sec.title && t.includes(sec.title.toLowerCase().split(" ")[0])) return sec; }
+  return null;
+}
+function isSendCmd(text){ return /\b(send|email|e-mail|mail|whats ?app|whatsapp)\b/i.test(text); }
+function sendChannel(text){
+  if(/whats ?app|whatsapp/i.test(text)) return "whatsapp";
+  if(/email|e-mail|mail/i.test(text)) return "email";
+  return null;
+}
+
+// Apply a spoken edit command to the quote. Returns a human summary.
+function applyEdit(job, text){
+  const low=text.toLowerCase();
+  if(/travel/.test(low)){ const n=numAfterTo(low)||firstNum(low); if(n!=null){ job.travel=n; save(); return "Set travel to "+rands(n); } }
+  const cat=findItem(low);
+  const sec=detectSection(job, low);
+  if(/\b(remove|delete|take out|get rid|scrap|cancel)\b/.test(low)){
+    if(!cat) return "Didn't catch which item to remove.";
+    const before=job.lineItems.length;
+    job.lineItems=job.lineItems.filter(li=>li.catId!==cat.id);
+    save(); return before>job.lineItems.length ? ("Removed "+cat.name) : (cat.name+" wasn't on the quote.");
+  }
+  if(/\b(change|set|make|update)\b/.test(low) && /\bto\b/.test(low)){
+    if(!cat) return "Didn't catch which item to change.";
+    const n=numAfterTo(low); if(n==null) return "Didn't catch the new amount.";
+    const hits=job.lineItems.filter(li=>li.catId===cat.id);
+    if(hits.length){ hits.forEach(li=>li.qty=n); save(); return "Set "+cat.name+" to "+n; }
+    // not present -> add it
+    addLine(job, cat, n, sec); save(); return "Added "+n+" × "+cat.name;
+  }
+  // default = add
+  if(cat){ const n = (cat.cable? (metresIn(low)||firstNum(low)||5) : (firstNum(low)||1)); addLine(job, cat, n, sec); save(); return "Added "+n+" × "+cat.name; }
+  return "Sorry, didn't catch that. Try “add two plug points”.";
+}
+function addLine(job, cat, qty, sec){
+  const target = sec || (job.sections&&job.sections[0]);
+  const tid = target?target.id:"adj";
+  const existing = job.lineItems.find(li=>li.catId===cat.id && li.sectionId===tid);
+  if(existing){ existing.qty += (qty||1); return; }
+  job.lineItems.push({ catId:cat.id, name:cat.name, unit:cat.unit, cost:cat.cost, labourHrs:cat.labourHrs, qty:qty||1,
+    sectionId: tid, sectionTitle: target?target.title:"Adjustments" });
+}
+
+/* ---------------- MESSAGE / SEND ---------------- */
+function waNumber(phone){ let d=(phone||"").replace(/\D/g,""); if(!d) return ""; if(d[0]==="0") d="27"+d.slice(1); else if(!d.startsWith("27")&&d.length<=10) d="27"+d; return d; }
+function clientMessage(job){
+  const s=data.settings, t=totals(job);
+  return `Hi ${job.client||"there"},\n\nThank you for your time today. Please find your quote from ${s.company} for the work at ${job.address||"your premises"}.\n\nTotal incl. VAT: ${rands(t.total)}\n\nThis quote is valid for 30 days. Reply to accept and we'll book you in.\n\n${s.company}${s.phone?" · "+s.phone:""}`;
+}
+function doSend(job, channel){
+  const msg=clientMessage(job);
+  if(channel==="whatsapp"){ const num=waNumber(job.phone); window.open("https://wa.me/"+num+"?text="+encodeURIComponent(msg),"_blank"); }
+  else { window.location.href="mailto:"+encodeURIComponent(job.email||"")+"?subject="+encodeURIComponent("Quote from "+data.settings.company)+"&body="+encodeURIComponent(msg); }
+  job.status="sent"; job.sentVia=(channel==="whatsapp"?"WhatsApp":"Email"); save();
+  setTimeout(()=>go("sent", job.id), 300);
+}
+
+/* ---------------- VOICE ENGINE ---------------- */
+let recog=null, listenState=null;
+function voiceSupported(){ return ("webkitSpeechRecognition" in window)||("SpeechRecognition" in window); }
+function startListen(opts){
+  if(!voiceSupported()){ alert("Voice isn't supported in this browser — please type instead. (Works on a phone over the live link.)"); return; }
+  if(recog) stopListen();
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  recog=new SR(); recog.lang="en-ZA"; recog.continuous=true; recog.interimResults=true;
+  let finalText="";
+  listenState={opts, active:true, getFinal:()=>finalText};
+  recog.onresult=(e)=>{
+    let interim="";
+    for(let i=e.resultIndex;i<e.results.length;i++){ const r=e.results[i]; if(r.isFinal) finalText+=r[0].transcript+" "; else interim+=r[0].transcript; }
+    const live=(finalText+interim).replace(/\s+/g," ").trim();
+    if(opts.onLive) opts.onLive(live);
+    const el=document.getElementById("ov-live"); if(el) el.textContent=live||"Listening…";
+  };
+  recog.onend=()=>{ if(listenState&&listenState.active){ try{recog.start();}catch(e){} } };
+  recog.onerror=()=>{};
+  try{recog.start();}catch(e){}
+  showOverlay(opts.title||"Listening…", opts.sub||"Speak naturally, then tap Done");
+}
+function stopListen(){
+  if(!recog){ hideOverlay(); return; }
+  const f=listenState?listenState.getFinal().trim():""; const opts=listenState?listenState.opts:{};
+  if(listenState) listenState.active=false;
+  try{recog.stop();}catch(e){} recog=null; listenState=null;
+  hideOverlay();
+  if(opts.onFinal) opts.onFinal(f);
+}
+function showOverlay(title, sub){
+  let ov=document.getElementById("voice-ov");
+  if(!ov){ ov=document.createElement("div"); ov.id="voice-ov"; document.body.appendChild(ov); }
+  ov.innerHTML=`<div class="ov-card"><div class="ov-mic">🎤</div>
+    <div class="ov-title">${esc(title)}</div><div class="ov-sub">${esc(sub||"")}</div>
+    <div class="ov-live" id="ov-live">Listening…</div>
+    <button class="btn green" id="ov-stop">✓ Done</button></div>`;
+  ov.style.display="flex";
+  document.getElementById("ov-stop").onclick=stopListen;
+}
+function hideOverlay(){ const ov=document.getElementById("voice-ov"); if(ov) ov.style.display="none"; }
+
+// dictate into a plain input/textarea by id, optional save callback
+function dictateInto(id, after){
+  const el=document.getElementById(id); if(!el) return;
+  const base=el.value?el.value.trim()+" ":"";
+  startListen({ title:"Listening…", onLive:(t)=>{ el.value=base+t; }, onFinal:(t)=>{ el.value=(base+t).trim(); if(after) after(el.value); } });
+}
+
+/* ---------------- RENDER ---------------- */
+const app=()=>document.getElementById("app");
+function topbar(title, backView){
+  const left = backView ? `<button class="back" data-go="${backView}">‹</button>` : `<span class="logo">Trade<b>Serv</b></span>`;
+  return `<div class="topbar">${left}<h1>${esc(title)}</h1><span class="tb-demo">DEMO</span>
+    <button class="tb-mic" data-voice>🎤 Talk</button></div>`;
+}
+function render(){
+  let html="";
+  switch(state.view){
+    case "jobs": html=viewJobs(); break;
+    case "new": html=viewNew(); break;
+    case "capture": html=viewCapture(); break;
+    case "quote": html=viewQuote(); break;
+    case "sent": html=viewSent(); break;
+    case "settings": html=viewSettings(); break;
+  }
+  app().innerHTML=html; bind();
+}
+
+function viewJobs(){
+  const jobs=[...data.jobs].sort((a,b)=>b.created-a.created);
+  const list = jobs.length ? `<div class="joblist">`+jobs.map(j=>{
+    const badge=j.status==="sent"?'<span class="badge sent">Sent</span>':j.status==="quoted"?'<span class="badge quoted">Quoted</span>':'<span class="badge draft">Draft</span>';
+    const tot=j.lineItems&&j.lineItems.length?rands(totals(j).total):"";
+    return `<div class="card tap" data-job="${j.id}"><div class="meta"><div class="nm">${esc(j.client||"Unnamed client")}</div>
+      <div class="ad">${esc(j.address||"No address")}</div></div>
+      <div class="right"><div class="small" style="font-weight:700">${tot}</div>${badge}</div></div>`;
+  }).join("")+`</div>` : `<div class="empty"><div class="ic">🧾</div><div>No jobs yet.<br>Tap “New Job” to quote your first site.</div></div>`;
+  return topbar("Your Jobs")+`<div class="wrap">
+    <div class="row" style="margin-bottom:6px"><button class="btn ghost sm" data-go="settings" style="flex:0 0 auto">⚙︎ Settings</button></div>
+    ${list}</div>
+    <button class="btn amber fab" data-go="new">＋ New Job</button>`;
+}
+
+function fieldMic(id){ return `<button class="ip-mic" data-fieldmic="${id}">🎤</button>`; }
+
+function viewNew(){
+  return topbar("New Job","jobs")+`<div class="wrap">
+    <div class="note">Don't like typing? Tap the 🎤 next to any box and just say it — or hit “Talk” up top.</div>
+    <div class="card">
+      <label>Client name</label>
+      <div class="ip"><input id="f-client" placeholder="e.g. Mrs Naidoo"/>${fieldMic("f-client")}</div>
+      <label>Site address</label>
+      <div class="ip"><input id="f-address" placeholder="e.g. 12 Oak Road, Gqeberha"/>${fieldMic("f-address")}</div>
+      <label>Client email (for sending)</label>
+      <div class="ip"><input id="f-email" type="email" placeholder="client@email.com"/>${fieldMic("f-email")}</div>
+      <label>Client mobile (for WhatsApp)</label>
+      <div class="ip"><input id="f-phone" type="tel" placeholder="082 123 4567"/>${fieldMic("f-phone")}</div>
+    </div>
+    <button class="btn primary" id="f-save">Start capturing →</button>
+  </div>`;
+}
+
+function viewCapture(){
+  const j=currentJob();
+  const secs=(j.sections||[]).map(sec=>`<div class="sec" data-sec="${sec.id}">
+      <div class="sec-top">
+        <input class="sec-title" data-sectitle="${sec.id}" value="${esc(sec.title)}" placeholder="Area name"/>
+        <button class="sec-mic" data-secmic="${sec.id}">🎤 Talk</button>
+        <button class="sec-del" data-secdel="${sec.id}">✕</button>
+      </div>
+      <textarea data-sectext="${sec.id}" placeholder="Say or type what's needed in ${esc(sec.title||"this area")}…">${esc(sec.text)}</textarea>
+    </div>`).join("");
+  const emptyState=(j.sections&&j.sections.length)?"":`<div class="empty small">No areas yet. Add one below — e.g. Kitchen, then tap its 🎤 and describe the work.</div>`;
+  return topbar(j.client||"Capture","jobs")+`<div class="wrap">
+    <div class="note">Split the job into areas. Tap an area's 🎤 and describe the work out loud — the “Talk” button up top adds to the area you're busy with.</div>
+    <h2 style="margin-top:6px">Job areas</h2>
+    ${secs}${emptyState}
+    <div class="chips">${SECTION_CHIPS.map(c=>`<button class="chip" data-chip="${esc(c)}">+ ${esc(c)}</button>`).join("")}
+      <button class="chip" data-chip="">+ Custom</button></div>
+    <div class="card" style="margin-top:12px">
+      <label style="margin-top:0">Photos (optional)</label>
+      <input type="file" id="f-photo" accept="image/*" capture="environment"/>
+      ${(j.photos&&j.photos.length)?`<div class="thumbs">${j.photos.map(p=>`<img src="${p}"/>`).join("")}</div>`:""}
+    </div>
+    <button class="btn ghost sm" id="demo-fill" style="width:100%;margin-top:4px">⚡ Fill with a sample job</button>
+    <button class="btn primary" id="to-quote">Build the quote →</button>
+  </div>`;
+}
+
+function viewQuote(){
+  const j=currentJob();
+  if(!j.lineItems) buildQuote(j);
+  const s=data.settings, t=totals(j);
+  // group by section order, then leftovers
+  const groups=[];
+  (j.sections||[]).forEach(sec=>{ const its=j.lineItems.filter(li=>li.sectionId===sec.id); if(its.length) groups.push({id:sec.id,title:sec.title,items:its}); });
+  const grouped=new Set((j.sections||[]).map(s=>s.id));
+  const extra=j.lineItems.filter(li=>!grouped.has(li.sectionId));
+  if(extra.length) groups.push({id:"adj",title:"Adjustments",items:extra});
+
+  function lineRow(li){
+    const gi=j.lineItems.indexOf(li);
+    return `<div class="qline">
+      <div class="qty"><input type="number" min="0" step="1" data-qty="${gi}" value="${li.qty}"/></div>
+      <div class="d"><div class="t">${esc(li.name)}</div><div class="s">${rands(lineSell(li))} / ${li.unit}</div></div>
+      <div class="amt">${rands(lineSell(li)*li.qty)}</div>
+      <button class="del" data-del="${gi}">✕</button></div>`;
+  }
+  function secBlock(g){
+    let mat=0,hrs=0; g.items.forEach(li=>{mat+=lineSell(li)*li.qty;hrs+=li.labourHrs*li.qty;});
+    const sub=mat+hrs*s.labourRate;
+    return `<div class="qsec-head"><span class="t">${esc(g.title)}</span>
+        <button class="m" data-qsecmic="${g.id}">🎤 change</button></div>
+      <div class="card" style="margin:0">${g.items.map(lineRow).join("")}
+        <div class="secsub"><span>Area subtotal (excl. VAT)</span><span>${rands(sub)}</span></div></div>`;
+  }
+  const body = groups.length ? groups.map(secBlock).join("")
+    : `<div class="empty small">The sample AI didn't spot any items. Go back, add an area and describe the work (or use the sample job).</div>`;
+
+  return topbar("Review Quote","capture")+`<div class="wrap">
+    <div class="note">Draft built from your words, grouped by area. Tap “🎤 change” on an area or “Talk” up top — say “add two plug points”, “remove the downlights”, “change cable to 20 metres”.</div>
+    ${body}
+    <button class="btn ghost sm" id="voice-edit" style="width:100%;margin-top:12px">🎤 Add or change by voice</button>
+    <div class="card" style="margin-top:12px">
+      <div class="totrow"><span class="lbl">Materials (incl. ${s.materialMarkup}% markup)</span><span>${rands(t.matSell)}</span></div>
+      <div class="totrow"><span class="lbl">Labour — ${(Math.round(t.hours*10)/10)} hrs @ ${rands(s.labourRate)}</span><span>${rands(t.labour)}</span></div>
+      <div class="totrow"><span class="lbl">Travel <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button></span><span>${rands(t.travel)}</span></div>
+      <div class="totrow"><span class="lbl">Subtotal (excl. VAT)</span><span>${rands(t.sub)}</span></div>
+      <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
+      <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
+    </div>
+    <div class="row">
+      <button class="btn green" id="send-wa">WhatsApp</button>
+      <button class="btn primary" id="send-email">Email</button>
+    </div>
+    <div class="hint" style="text-align:center;margin-top:8px">…or just say “send by WhatsApp” / “send by email”.</div>
+    <button class="btn ghost" data-go="jobs">Save & close</button>
+  </div>`;
+}
+
+function viewSent(){
+  const j=currentJob(); const s=data.settings, t=totals(j);
+  const groups=[];
+  (j.sections||[]).forEach(sec=>{ const its=j.lineItems.filter(li=>li.sectionId===sec.id); if(its.length) groups.push({title:sec.title,items:its}); });
+  const grouped=new Set((j.sections||[]).map(s=>s.id));
+  const extra=j.lineItems.filter(li=>!grouped.has(li.sectionId));
+  if(extra.length) groups.push({title:"Adjustments",items:extra});
+  const docBody=groups.map(g=>`<div class="docsec">${esc(g.title)}</div>`+g.items.map(li=>`<div class="kv"><span>${esc(li.name)} ×${li.qty}</span><span>${rands(lineSell(li)*li.qty)}</span></div>`).join("")).join("");
+  const msg=clientMessage(j);
+  return topbar("Quote Sent","jobs")+`<div class="wrap">
+    <div class="successbox"><div class="ic">✓</div>
+      <div style="font-size:19px;font-weight:800">Quote sent via ${esc(j.sentVia||"")}!</div>
+      <div class="muted small">On a phone this opens ${esc(j.sentVia||"the app")} with the message ready to send as a branded quote.</div></div>
+    <div class="card">
+      <div class="doc-head"><div class="co">${esc(s.company)}</div>
+        ${s.tagline?`<div class="tag">${esc(s.tagline)}</div>`:""}<div class="ti">Quotation</div></div>
+      ${(s.phone||s.email)?`<div class="kv"><span class="muted">Contact</span><span>${esc(s.phone||"")}${(s.phone&&s.email)?" · ":""}${esc(s.email||"")}</span></div>`:""}
+      <div class="kv"><span class="muted">To</span><span>${esc(j.client||"-")}</span></div>
+      <div class="kv"><span class="muted">Site</span><span>${esc(j.address||"-")}</span></div>
+      ${s.vatNo?`<div class="kv"><span class="muted">VAT No.</span><span>${esc(s.vatNo)}</span></div>`:""}
+      ${docBody}
+      <div style="height:6px"></div>
+      <div class="kv"><span>Labour (${Math.round(t.hours*10)/10} hrs)</span><span>${rands(t.labour)}</span></div>
+      <div class="kv"><span>Travel</span><span>${rands(t.travel)}</span></div>
+      <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
+      <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
+    </div>
+    <h2>What the client receives</h2>
+    <div class="send-preview">${esc(msg)}</div>
+    <button class="btn primary" data-go="jobs" style="margin-top:16px">Back to jobs</button>
+  </div>`;
+}
+
+function viewSettings(){
+  const s=data.settings, tab=state.settingsTab;
+  const seg=`<div class="seg">
+    <button data-tab="markups" class="${tab==="markups"?"on":""}">Markups & rates</button>
+    <button data-tab="prices" class="${tab==="prices"?"on":""}">Price list</button></div>`;
+  let body;
+  if(tab==="markups"){
+    body=`<div class="card">
+      <label>Company name (on quotes)</label><input id="s-company" value="${esc(s.company)}"/>
+      <label>Tagline / slogan</label><input id="s-tagline" value="${esc(s.tagline||"")}"/>
+      <label>Contact phone</label><input id="s-phone" value="${esc(s.phone||"")}"/>
+      <label>Contact email</label><input id="s-email" value="${esc(s.email||"")}"/>
+      <label>VAT number (leave blank if not registered)</label><input id="s-vatno" value="${esc(s.vatNo||"")}"/>
+      <label>Material markup (%)</label><input id="s-markup" type="number" value="${s.materialMarkup}"/>
+      <div class="hint">Added on top of what you pay for materials.</div>
+      <label>Labour rate (R per hour)</label><input id="s-labour" type="number" value="${s.labourRate}"/>
+      <label>Default travel fee (R)</label><input id="s-travel" type="number" value="${s.travelFee}"/>
+      <label>VAT (%)</label><input id="s-vat" type="number" value="${s.vat}"/>
+      <button class="btn primary" id="s-save">Save settings</button></div>`;
+  } else {
+    body=`<div class="card"><div class="hint" style="margin-bottom:8px">Prices you pay (excl. markup). In the full app these import from Sage or a supplier list.</div>
+      ${CATALOGUE.map(c=>`<div class="pricerow"><div class="nm">${esc(c.name)}<div class="muted" style="font-size:12px">per ${c.unit} · ${c.labourHrs} hr install</div></div>
+        <div class="pin"><input type="number" data-price="${c.id}" value="${c.cost}"/></div></div>`).join("")}
+      <button class="btn primary" id="p-save">Save prices</button></div>`;
+  }
+  return topbar("Settings","jobs")+`<div class="wrap">${seg}${body}</div>`;
+}
+
+/* ---------------- EVENTS ---------------- */
+function val(id){ const e=document.getElementById(id); return e?e.value.trim():""; }
+function num(id){ const e=document.getElementById(id); return e?(parseFloat(e.value)||0):0; }
+function flash(msg){
+  const d=document.createElement("div"); d.textContent=msg;
+  d.style.cssText="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:#1c2433;color:#fff;padding:11px 20px;border-radius:30px;z-index:99;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:90%;text-align:center";
+  document.body.appendChild(d); setTimeout(()=>d.remove(),1900);
+}
+
+function topbarVoice(){
+  const j=currentJob();
+  if(state.view==="new"){ const id=(lastFocusId&&document.getElementById(lastFocusId))?lastFocusId:"f-client"; flash("Filling: "+(({"f-client":"client name","f-address":"address","f-email":"email","f-phone":"mobile"})[id]||"field")); dictateInto(id); return; }
+  if(state.view==="capture"){
+    let sec=(j.sections||[]).find(x=>x.id===state.activeSec) || (j.sections&&j.sections[j.sections.length-1]);
+    if(!sec){ sec={id:uid(),title:"General",text:""}; j.sections=j.sections||[]; j.sections.push(sec); save(); }
+    state.activeSec=sec.id;
+    const base=sec.text?sec.text.trim()+" ":"";
+    startListen({ title:"Listening — "+(sec.title||"area"), sub:"Describe the work, then tap Done",
+      onLive:(t)=>{ const el=document.querySelector('[data-sectext="'+sec.id+'"]'); if(el) el.value=base+t; },
+      onFinal:(t)=>{ sec.text=(base+t).trim(); save(); render(); } });
+    return;
+  }
+  if(state.view==="quote"){
+    startListen({ title:"Listening…", sub:"e.g. “add two plugs” or “send by WhatsApp”",
+      onFinal:(t)=>{ if(!t){return;} if(isSendCmd(t)){ const ch=sendChannel(t)||"whatsapp"; doSend(j,ch); return; } const r=applyEdit(j,t); buildKeepExtras(j); flash(r); render(); } });
+    return;
+  }
+  if(state.view==="jobs"){ startListen({ title:"Say a command", sub:"e.g. “new job”", onFinal:(t)=>{ if(/new job|new quote|add job/i.test(t)) go("new"); else flash("Try saying “new job”."); } }); return; }
+  if(state.view==="settings"){ const id=(lastFocusId&&document.getElementById(lastFocusId))?lastFocusId:"s-company"; dictateInto(id); return; }
+  if(state.view==="sent"){ startListen({ title:"Say a command", sub:"e.g. “back to jobs”", onFinal:(t)=>{ if(/job|done|back|home/i.test(t)) go("jobs"); } }); }
+}
+// recompute totals/status after a voice edit without wiping voice-added extras
+function buildKeepExtras(job){ job.status=job.lineItems.length?"quoted":"draft"; if(job.travel==null) job.travel=data.settings.travelFee; save(); }
+
+function bind(){
+  document.querySelectorAll("[data-go]").forEach(el=>el.onclick=()=>{ stopListen(); go(el.dataset.go); });
+  document.querySelectorAll("[data-job]").forEach(el=>el.onclick=()=>{ const j=data.jobs.find(x=>x.id===el.dataset.job); normalize(j); go(j.lineItems&&j.lineItems.length?"quote":"capture", el.dataset.job); });
+  const tv=document.querySelector("[data-voice]"); if(tv) tv.onclick=topbarVoice;
+
+  if(state.view==="new"){
+    document.querySelectorAll("[data-fieldmic]").forEach(b=>b.onclick=()=>dictateInto(b.dataset.fieldmic));
+    document.getElementById("f-save").onclick=()=>{
+      const job={ id:uid(), created:Date.now(), status:"draft", client:val("f-client"), address:val("f-address"),
+        email:val("f-email"), phone:val("f-phone"), sections:[], photos:[], lineItems:null, travel:null };
+      data.jobs.push(job); save(); state.activeSec=null; go("capture", job.id);
+    };
+  }
+
+  if(state.view==="capture"){
+    const j=currentJob();
+    document.querySelectorAll("[data-sectext]").forEach(ta=>{
+      ta.onfocus=()=>{ state.activeSec=ta.dataset.sectext; };
+      ta.oninput=()=>{ const sec=j.sections.find(s=>s.id===ta.dataset.sectext); if(sec){ sec.text=ta.value; save(); } };
+    });
+    document.querySelectorAll("[data-sectitle]").forEach(inp=>inp.oninput=()=>{ const sec=j.sections.find(s=>s.id===inp.dataset.sectitle); if(sec){ sec.title=inp.value; save(); } });
+    document.querySelectorAll("[data-secmic]").forEach(b=>b.onclick=()=>{
+      const id=b.dataset.secmic; const sec=j.sections.find(s=>s.id===id); if(!sec) return; state.activeSec=id;
+      const base=sec.text?sec.text.trim()+" ":"";
+      startListen({ title:"Listening — "+(sec.title||"area"), sub:"Describe the work, then tap Done",
+        onLive:(t)=>{ const el=document.querySelector('[data-sectext="'+id+'"]'); if(el) el.value=base+t; },
+        onFinal:(t)=>{ sec.text=(base+t).trim(); save(); render(); } });
+    });
+    document.querySelectorAll("[data-secdel]").forEach(b=>b.onclick=()=>{ j.sections=j.sections.filter(s=>s.id!==b.dataset.secdel); save(); render(); });
+    document.querySelectorAll("[data-chip]").forEach(b=>b.onclick=()=>{
+      let title=b.dataset.chip; if(title==="") title=prompt("Area name:","")||""; if(title==="" && b.dataset.chip==="") return;
+      j.sections=j.sections||[]; const sec={id:uid(),title:title||"Area",text:""}; j.sections.push(sec); state.activeSec=sec.id; save(); render();
+    });
+    document.getElementById("demo-fill").onclick=()=>{ j.sections=DEMO_SECTIONS.map(s=>({id:uid(),title:s.title,text:s.text})); save(); render(); };
+    const ph=document.getElementById("f-photo");
+    if(ph) ph.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ j.photos=j.photos||[]; j.photos.push(r.result); save(); render(); }; r.readAsDataURL(f); };
+    document.getElementById("to-quote").onclick=()=>{ stopListen(); buildQuote(j); go("quote", j.id); };
+  }
+
+  if(state.view==="quote"){
+    const j=currentJob();
+    document.querySelectorAll("[data-qty]").forEach(inp=>inp.onchange=()=>{ j.lineItems[+inp.dataset.qty].qty=Math.max(0,parseFloat(inp.value)||0); save(); render(); });
+    document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{ j.lineItems.splice(+b.dataset.del,1); save(); render(); });
+    document.querySelectorAll("[data-qsecmic]").forEach(b=>b.onclick=()=>{
+      const secId=b.dataset.qsecmic; const sec=(j.sections||[]).find(s=>s.id===secId)||null;
+      startListen({ title:"Change "+((sec&&sec.title)||"this area"), sub:"e.g. “add two plug points”",
+        onFinal:(t)=>{ if(!t) return; const r=applyEdit(j, (sec?sec.title+" ":"")+t); buildKeepExtras(j); flash(r); render(); } });
+    });
+    const ve=document.getElementById("voice-edit"); if(ve) ve.onclick=()=>topbarVoice();
+    const et=document.getElementById("edit-travel"); if(et) et.onclick=()=>{ const v=prompt("Travel fee (R):", j.travel!=null?j.travel:data.settings.travelFee); if(v!=null){ j.travel=parseFloat(v)||0; save(); render(); } };
+    document.getElementById("send-wa").onclick=()=>doSend(j,"whatsapp");
+    document.getElementById("send-email").onclick=()=>doSend(j,"email");
+  }
+
+  if(state.view==="settings"){
+    document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ state.settingsTab=b.dataset.tab; render(); });
+    const ss=document.getElementById("s-save");
+    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.materialMarkup=num("s-markup"); s.labourRate=num("s-labour"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
+    const ps=document.getElementById("p-save");
+    if(ps) ps.onclick=()=>{ document.querySelectorAll("[data-price]").forEach(inp=>{ const c=CATALOGUE.find(x=>x.id===inp.dataset.price); if(c) c.cost=parseFloat(inp.value)||0; }); flash("Prices saved"); };
+  }
+}
+
+/* boot */
+document.addEventListener("focusin",(e)=>{ if(e.target&&e.target.matches&&e.target.matches("input,textarea")) lastFocusId=e.target.id||null; });
+render();
+</script>
+</body>
+</html>
