@@ -148,6 +148,7 @@ const DEFAULT_SETTINGS = {
   email: "acelec.pe@gmail.com",
   vatNo: "",
   quotePrefix: "Q",
+  spokenLang: "en-ZA",
   materialMarkup: 25, labourRate: 350, travelFee: 250, vat: 15
 };
 
@@ -169,6 +170,34 @@ const SEED_CATALOGUE = [
 ];
 
 const SECTION_CHIPS = ["Kitchen","Bathroom","Lounge","Bedroom","Outside","Garage","Roof","DB / Board","Geyser"];
+
+/* Languages: en always; af + xh chosen. sr = speech-recognition code for the mic. */
+const LANGS = [
+  {code:"en", name:"English",  sr:"en-ZA"},
+  {code:"af", name:"Afrikaans",sr:"af-ZA"},
+  {code:"xh", name:"isiXhosa", sr:"xh-ZA"}
+];
+function langName(code){ const l=LANGS.find(x=>x.code===code); return l?l.name:"English"; }
+// Client-facing wording per language. (af/xh are starter translations — refine in the app.)
+const I18N = {
+  en:{ quotation:"Quotation", quoteNo:"Quote No.", date:"Date", contact:"Contact", to:"To", site:"Site", vatNo:"VAT No.",
+    materials:"Materials", inclMarkup:"incl. {p}% markup", labour:"Labour", hrs:"hrs", travel:"Travel",
+    subtotal:"Subtotal (excl. VAT)", vat:"VAT", total:"Total", validity:"This quotation is valid for 30 days.",
+    there:"there", premises:"your premises",
+    msg:"Hi {client},\n\nThank you for your time today. Please find your quote ({number}) from {company} for the work at {site}, attached as a PDF.\n\nTotal incl. VAT: {total}\n\nThis quote is valid for 30 days. Reply to accept and we'll book you in.\n\n{company}{phoneline}" },
+  af:{ quotation:"Kwotasie", quoteNo:"Kwotasie-nr.", date:"Datum", contact:"Kontak", to:"Aan", site:"Perseel", vatNo:"BTW-nr.",
+    materials:"Materiaal", inclMarkup:"sluit {p}% opslag in", labour:"Arbeid", hrs:"uur", travel:"Reiskoste",
+    subtotal:"Subtotaal (sonder BTW)", vat:"BTW", total:"Totaal", validity:"Hierdie kwotasie is 30 dae geldig.",
+    there:"daar", premises:"u perseel",
+    msg:"Hallo {client},\n\nBaie dankie vir u tyd vandag. Hierby is u kwotasie ({number}) van {company} vir die werk by {site}, aangeheg as 'n PDF.\n\nTotaal (BTW ingesluit): {total}\n\nHierdie kwotasie is 30 dae geldig. Antwoord om te aanvaar, dan bespreek ons u in.\n\n{company}{phoneline}" },
+  xh:{ quotation:"Ikhowuthi", quoteNo:"Inombolo yekhowuthi", date:"Umhla", contact:"Uqhagamshelwano", to:"Ku", site:"Indawo", vatNo:"Inombolo ye-VAT",
+    materials:"Izixhobo", inclMarkup:"kuquka i-markup ye-{p}%", labour:"Umsebenzi", hrs:"iiyure", travel:"Uhambo",
+    subtotal:"Isabelo (ngaphandle kwe-VAT)", vat:"i-VAT", total:"Iyonke", validity:"Le khowuthi isebenza iintsuku ezingama-30.",
+    there:"molo", premises:"kwindawo yakho",
+    msg:"Molo {client},\n\nEnkosi ngexesha lakho namhlanje. Nantsi ikhowuthi yakho ({number}) evela ku-{company} ngomsebenzi e-{site}, eqhotyoshelwe njenge-PDF.\n\nIyonke (kuquka i-VAT): {total}\n\nLe khowuthi isebenza iintsuku ezingama-30. Phendula ukuyamkela kwaye siza kukubhukisha.\n\n{company}{phoneline}" }
+};
+function LX(job){ return I18N[(job&&job.lang)||"en"]||I18N.en; }
+function fillTpl(tpl, map){ return String(tpl).replace(/\{(\w+)\}/g,(m,k)=>map[k]!=null?map[k]:""); }
 
 const DEMO_SECTIONS = [
   {title:"Kitchen", text:"Replace the distribution board, an eighteen way board. Add two double plug points above the counter and one single plug point by the fridge. Replace the light switch at the door and put in four LED downlights. There is an earth leakage unit that needs replacing."},
@@ -322,8 +351,8 @@ function addLine(job, cat, qty, sec){
 /* ---------------- MESSAGE / SEND ---------------- */
 function waNumber(phone){ let d=(phone||"").replace(/\D/g,""); if(!d) return ""; if(d[0]==="0") d="27"+d.slice(1); else if(!d.startsWith("27")&&d.length<=10) d="27"+d; return d; }
 function clientMessage(job){
-  const s=data.settings, t=totals(job);
-  return `Hi ${job.client||"there"},\n\nThank you for your time today. Please find your quote (${numberFor(job)}) from ${s.company} for the work at ${job.address||"your premises"}, attached as a PDF.\n\nTotal incl. VAT: ${rands(t.total)}\n\nThis quote is valid for 30 days. Reply to accept and we'll book you in.\n\n${s.company}${s.phone?" · "+s.phone:""}`;
+  const s=data.settings, t=totals(job), tx=LX(job);
+  return fillTpl(tx.msg, { client: job.client||tx.there, number: numberFor(job), company: s.company, site: job.address||tx.premises, total: rands(t.total), phoneline: s.phone?" · "+s.phone:"" });
 }
 
 /* ---- PDF (jsPDF, lazy-loaded from CDN) ---- */
@@ -343,19 +372,20 @@ function quoteGroups(job){
 function generatePdfBlob(job){
   const { jsPDF }=window.jspdf;
   const doc=new jsPDF({unit:"pt",format:"a4"});
-  const s=data.settings, t=totals(job);
+  const s=data.settings, t=totals(job), tx=LX(job);
   const W=doc.internal.pageSize.getWidth(); const M=42, colAmt=W-M; let y=52;
   doc.setFont("helvetica","bold"); doc.setTextColor(27,44,79); doc.setFontSize(20); doc.text(s.company||"",M,y);
   if(s.tagline){ y+=14; doc.setFont("helvetica","italic"); doc.setTextColor(120); doc.setFontSize(9); doc.text(s.tagline,M,y); }
   doc.setFont("helvetica","normal"); doc.setTextColor(60); doc.setFontSize(10);
-  doc.text("Quote: "+numberFor(job), colAmt, 52, {align:"right"});
-  doc.text("Date: "+dateStr(job.created||Date.now()), colAmt, 66, {align:"right"});
-  y+=16; doc.setDrawColor(27,44,79); doc.setLineWidth(1.4); doc.line(M,y,W-M,y); doc.setLineWidth(1); y+=20;
-  doc.setTextColor(40); doc.setFontSize(10);
-  if(s.phone||s.email){ doc.text("Contact: "+[s.phone,s.email].filter(Boolean).join("   "),M,y); y+=15; }
-  doc.text("To: "+(job.client||"-"),M,y); y+=15;
-  doc.text("Site: "+(job.address||"-"),M,y); y+=15;
-  if(s.vatNo){ doc.text("VAT No: "+s.vatNo,M,y); y+=15; }
+  doc.text(tx.quoteNo+": "+numberFor(job), colAmt, 52, {align:"right"});
+  doc.text(tx.date+": "+dateStr(job.created||Date.now()), colAmt, 66, {align:"right"});
+  y+=16; doc.setDrawColor(27,44,79); doc.setLineWidth(1.4); doc.line(M,y,W-M,y); doc.setLineWidth(1); y+=14;
+  doc.setFont("helvetica","bold"); doc.setTextColor(27,44,79); doc.setFontSize(12); doc.text(tx.quotation.toUpperCase(), M, y); y+=18;
+  doc.setFont("helvetica","normal"); doc.setTextColor(40); doc.setFontSize(10);
+  if(s.phone||s.email){ doc.text(tx.contact+": "+[s.phone,s.email].filter(Boolean).join("   "),M,y); y+=15; }
+  doc.text(tx.to+": "+(job.client||"-"),M,y); y+=15;
+  doc.text(tx.site+": "+(job.address||"-"),M,y); y+=15;
+  if(s.vatNo){ doc.text(tx.vatNo+": "+s.vatNo,M,y); y+=15; }
   y+=8;
   quoteGroups(job).forEach(g=>{
     if(y>770){ doc.addPage(); y=52; }
@@ -374,14 +404,14 @@ function generatePdfBlob(job){
   if(y>690){ doc.addPage(); y=52; }
   doc.setDrawColor(27,44,79); doc.line(M,y,W-M,y); y+=17;
   function row(lbl,val,big){ doc.setFont("helvetica",big?"bold":"normal"); doc.setFontSize(big?13:10); if(big){doc.setTextColor(27,44,79);}else{doc.setTextColor(90);} doc.text(lbl,M,y); doc.text(val,colAmt,y,{align:"right"}); y+=big?20:15; }
-  row("Materials (incl. "+s.materialMarkup+"% markup)", randsPdf(t.matSell));
-  row("Labour ("+(Math.round(t.hours*10)/10)+" hrs @ "+randsPdf(s.labourRate)+")", randsPdf(t.labour));
-  row("Travel", randsPdf(t.travel));
-  row("Subtotal (excl. VAT)", randsPdf(t.sub));
-  row("VAT @ "+s.vat+"%", randsPdf(t.vat));
-  row("TOTAL", randsPdf(t.total), true);
+  row(tx.materials+" ("+fillTpl(tx.inclMarkup,{p:s.materialMarkup})+")", randsPdf(t.matSell));
+  row(tx.labour+" ("+(Math.round(t.hours*10)/10)+" "+tx.hrs+" @ "+randsPdf(s.labourRate)+")", randsPdf(t.labour));
+  row(tx.travel, randsPdf(t.travel));
+  row(tx.subtotal, randsPdf(t.sub));
+  row(tx.vat+" @ "+s.vat+"%", randsPdf(t.vat));
+  row(tx.total.toUpperCase(), randsPdf(t.total), true);
   y+=8; doc.setFont("helvetica","italic"); doc.setTextColor(120); doc.setFontSize(9);
-  doc.text("This quotation is valid for 30 days.",M,y);
+  doc.text(tx.validity,M,y);
   return doc.output("blob");
 }
 function dataURLtoFile(durl, name){
@@ -480,7 +510,7 @@ function startListen(opts){
   if(!voiceSupported()){ alert("Voice isn't supported in this browser — please type instead. (Works on a phone over the live link.)"); return; }
   if(recog) stopListen();
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  recog=new SR(); recog.lang="en-ZA"; recog.continuous=true; recog.interimResults=true;
+  recog=new SR(); recog.lang=(data.settings.spokenLang||"en-ZA"); recog.continuous=true; recog.interimResults=true;
   let finalText="";
   listenState={opts, active:true, getFinal:()=>finalText};
   recog.onresult=(e)=>{
@@ -607,6 +637,8 @@ function viewNew(){
       <div class="ip"><input id="f-email" type="email" placeholder="client@email.com"/>${fieldMic("f-email")}</div>
       <label>Client mobile (for WhatsApp)</label>
       <div class="ip"><input id="f-phone" type="tel" placeholder="082 123 4567"/>${fieldMic("f-phone")}</div>
+      <label>Client's language (the quote is sent in this)</label>
+      <select id="f-lang">${LANGS.map(l=>`<option value="${l.code}">${esc(l.name)}</option>`).join("")}</select>
     </div>
     <button class="btn primary" id="f-save">Start capturing →</button>
   </div>`;
@@ -634,6 +666,8 @@ function viewCapture(){
       <div class="ip"><input id="c-email" type="email" value="${esc(j.email||"")}" placeholder="client@email.com"/>${fieldMic("c-email")}</div>
       <label>Mobile (for WhatsApp)</label>
       <div class="ip"><input id="c-phone" type="tel" value="${esc(j.phone||"")}" placeholder="082 123 4567"/>${fieldMic("c-phone")}</div>
+      <label>Client's language (the quote is sent in this)</label>
+      <select id="c-lang">${LANGS.map(l=>`<option value="${l.code}"${(j.lang||"en")===l.code?" selected":""}>${esc(l.name)}</option>`).join("")}</select>
     </div>
     <div class="note">Split the job into areas. Tap an area's 🎤 and describe the work out loud — the “Talk” button up top adds to the area you're busy with.</div>
     <h2 style="margin-top:6px">Job areas</h2>
@@ -717,28 +751,28 @@ function viewSent(){
   const extra=j.lineItems.filter(li=>!grouped.has(li.sectionId));
   if(extra.length) groups.push({title:"Adjustments",items:extra});
   const docBody=groups.map(g=>`<div class="docsec">${esc(g.title)}</div>`+g.items.map(li=>`<div class="kv"><span>${esc(li.name)} ×${li.qty}</span><span>${rands(lineSell(li)*li.qty)}</span></div>`).join("")).join("");
-  const msg=clientMessage(j);
+  const msg=clientMessage(j); const tx=LX(j);
   return topbar("Quote Sent","jobs")+`<div class="wrap">
     <div class="successbox"><div class="ic">✓</div>
       <div style="font-size:19px;font-weight:800">${esc(numberFor(j))} sent via ${esc(j.sentVia||"")}!</div>
-      <div class="muted small">On a phone, your share menu opens with the <b>PDF attached</b> — pick the contact and send.</div></div>
+      <div class="muted small">In <b>${esc(langName(j.lang))}</b> — on a phone your share menu opens with the <b>PDF attached</b>; pick the contact and send.</div></div>
     <div class="card">
       <div class="doc-head"><div class="co">${esc(s.company)}</div>
-        ${s.tagline?`<div class="tag">${esc(s.tagline)}</div>`:""}<div class="ti">Quotation</div></div>
-      <div class="kv"><span class="muted">Quote No.</span><span>${esc(numberFor(j))}</span></div>
-      <div class="kv"><span class="muted">Date</span><span>${esc(dateStr(j.created))}</span></div>
-      ${(s.phone||s.email)?`<div class="kv"><span class="muted">Contact</span><span>${esc(s.phone||"")}${(s.phone&&s.email)?" · ":""}${esc(s.email||"")}</span></div>`:""}
-      <div class="kv"><span class="muted">To</span><span>${esc(j.client||"-")}</span></div>
-      <div class="kv"><span class="muted">Site</span><span>${esc(j.address||"-")}</span></div>
-      ${s.vatNo?`<div class="kv"><span class="muted">VAT No.</span><span>${esc(s.vatNo)}</span></div>`:""}
+        ${s.tagline?`<div class="tag">${esc(s.tagline)}</div>`:""}<div class="ti">${esc(tx.quotation)}</div></div>
+      <div class="kv"><span class="muted">${esc(tx.quoteNo)}</span><span>${esc(numberFor(j))}</span></div>
+      <div class="kv"><span class="muted">${esc(tx.date)}</span><span>${esc(dateStr(j.created))}</span></div>
+      ${(s.phone||s.email)?`<div class="kv"><span class="muted">${esc(tx.contact)}</span><span>${esc(s.phone||"")}${(s.phone&&s.email)?" · ":""}${esc(s.email||"")}</span></div>`:""}
+      <div class="kv"><span class="muted">${esc(tx.to)}</span><span>${esc(j.client||"-")}</span></div>
+      <div class="kv"><span class="muted">${esc(tx.site)}</span><span>${esc(j.address||"-")}</span></div>
+      ${s.vatNo?`<div class="kv"><span class="muted">${esc(tx.vatNo)}</span><span>${esc(s.vatNo)}</span></div>`:""}
       ${docBody}
       <div style="height:6px"></div>
-      <div class="kv"><span>Labour (${Math.round(t.hours*10)/10} hrs)</span><span>${rands(t.labour)}</span></div>
-      <div class="kv"><span>Travel</span><span>${rands(t.travel)}</span></div>
-      <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
-      <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
+      <div class="kv"><span>${esc(tx.labour)} (${Math.round(t.hours*10)/10} ${esc(tx.hrs)})</span><span>${rands(t.labour)}</span></div>
+      <div class="kv"><span>${esc(tx.travel)}</span><span>${rands(t.travel)}</span></div>
+      <div class="totrow"><span class="lbl">${esc(tx.vat)} @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
+      <div class="totrow big"><span>${esc(tx.total)}</span><span>${rands(t.total)}</span></div>
     </div>
-    <h2>What the client receives</h2>
+    <h2>What the client receives (in ${esc(langName(j.lang))})</h2>
     <div class="send-preview">${esc(msg)}</div>
     <button class="btn primary" data-go="jobs" style="margin-top:16px">Back to jobs</button>
   </div>`;
@@ -764,6 +798,9 @@ function viewSettings(){
       <label>Labour rate (R per hour)</label><input id="s-labour" type="number" value="${s.labourRate}"/>
       <label>Default travel fee (R)</label><input id="s-travel" type="number" value="${s.travelFee}"/>
       <label>VAT (%)</label><input id="s-vat" type="number" value="${s.vat}"/>
+      <label>Your spoken language (for the 🎤 mic)</label>
+      <select id="s-spoken">${LANGS.map(l=>`<option value="${l.sr}"${(s.spokenLang||"en-ZA")===l.sr?" selected":""}>${esc(l.name)}</option>`).join("")}</select>
+      <div class="hint">English & Afrikaans work well in phone browsers. isiXhosa voice is limited in browsers — the live app will use a proper speech service.</div>
       <button class="btn primary" id="s-save">Save settings</button></div>`;
   } else if(tab==="prices"){
     body=`<div class="card"><div class="hint" style="margin-bottom:8px">Prices you pay (excl. markup), ${data.catalogue.length} items. Edit a price, or use <b>Import</b> to update from a supplier. These now save and stick.</div>
@@ -857,7 +894,7 @@ function bind(){
     document.querySelectorAll("[data-fieldmic]").forEach(b=>b.onclick=()=>dictateInto(b.dataset.fieldmic));
     document.getElementById("f-save").onclick=()=>{
       const job={ id:uid(), number:nextNumber(), created:Date.now(), status:"draft", client:val("f-client"), address:val("f-address"),
-        email:val("f-email"), phone:val("f-phone"), sections:[], photos:[], lineItems:null, travel:null };
+        email:val("f-email"), phone:val("f-phone"), lang:(document.getElementById("f-lang")||{}).value||"en", sections:[], photos:[], lineItems:null, travel:null };
       data.jobs.push(job); save(); state.activeSec=null; go("capture", job.id);
     };
   }
@@ -867,6 +904,7 @@ function bind(){
     const cmap={"c-client":"client","c-address":"address","c-email":"email","c-phone":"phone"};
     Object.keys(cmap).forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=()=>{ j[cmap[id]]=el.value; save(); if(id==="c-client"){ const h=document.querySelector(".topbar h1"); if(h) h.textContent=el.value||"Capture"; } }; });
     document.querySelectorAll("[data-fieldmic]").forEach(b=>{ const id=b.dataset.fieldmic; if(cmap[id]) b.onclick=()=>dictateInto(id,(v)=>{ j[cmap[id]]=v.trim(); save(); }); });
+    const cl=document.getElementById("c-lang"); if(cl) cl.onchange=()=>{ j.lang=cl.value; save(); };
     document.querySelectorAll("[data-sectext]").forEach(ta=>{
       ta.onfocus=()=>{ state.activeSec=ta.dataset.sectext; };
       ta.oninput=()=>{ const sec=j.sections.find(s=>s.id===ta.dataset.sectext); if(sec){ sec.text=ta.value; save(); } };
@@ -910,7 +948,7 @@ function bind(){
   if(state.view==="settings"){
     document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ state.settingsTab=b.dataset.tab; render(); });
     const ss=document.getElementById("s-save");
-    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q"; s.materialMarkup=num("s-markup"); s.labourRate=num("s-labour"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
+    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q"; const sp=document.getElementById("s-spoken"); if(sp) s.spokenLang=sp.value; s.materialMarkup=num("s-markup"); s.labourRate=num("s-labour"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
     const ps=document.getElementById("p-save");
     if(ps) ps.onclick=()=>{ document.querySelectorAll("[data-price]").forEach(inp=>{ const c=data.catalogue.find(x=>x.id===inp.dataset.price); if(c) c.cost=parseFloat(inp.value)||0; }); save(); flash("Prices saved"); };
     document.querySelectorAll("[data-pricedel]").forEach(b=>b.onclick=()=>{ if(confirm("Remove this item from the price list?")){ data.catalogue=data.catalogue.filter(c=>c.id!==b.dataset.pricedel); save(); render(); } });
