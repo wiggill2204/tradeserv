@@ -132,6 +132,38 @@
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(214,69,69,.5)}70%{box-shadow:0 0 0 20px rgba(214,69,69,0)}100%{box-shadow:0 0 0 0 rgba(214,69,69,0)}}
   .thumbs{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
   .thumbs img{width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+  /* professional quote document */
+  .qdoc{background:#fff;border-radius:12px;box-shadow:var(--shadow);padding:18px 16px;font-size:13px;color:#23314d}
+  .qd-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .qd-brand{display:flex;gap:10px;align-items:flex-start;min-width:0}
+  .qd-badge{width:46px;height:46px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex:0 0 auto}
+  .qd-logo{max-height:50px;max-width:150px;object-fit:contain}
+  .qd-co{font-size:18px;font-weight:800;color:var(--blue);line-height:1.1}
+  .qd-tag{font-size:11px;color:var(--amber-dark);font-style:italic;margin-top:2px}
+  .qd-reg{font-size:10px;color:var(--muted);margin-top:2px}
+  .qd-meta{text-align:right;flex:0 0 auto}
+  .qd-title{font-size:15px;font-weight:800;color:var(--blue);letter-spacing:1px}
+  .qd-mrow{font-size:11px;color:var(--muted);margin-top:3px}
+  .qd-mrow b{color:#23314d;margin-left:6px}
+  .qd-rule{height:2px;background:var(--blue);margin:12px 0}
+  .qd-fromto{display:flex;gap:16px;margin-bottom:14px}
+  .qd-fromto > div{flex:1;min-width:0}
+  .qd-lbl{font-size:9px;letter-spacing:1.5px;color:var(--muted);font-weight:700;margin-bottom:3px}
+  .qd-fromto b{font-size:13px;display:block;margin-bottom:2px}
+  .qd-fromto div .ln{font-size:11px;color:#4a566e;line-height:1.45}
+  .qd-table{width:100%;border-collapse:collapse;margin-bottom:10px}
+  .qd-table th{font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;color:#fff;background:var(--blue);padding:6px 8px;text-align:left;font-weight:700}
+  .qd-table th.r,.qd-table td.r{text-align:right}
+  .qd-table th.c,.qd-table td.c{text-align:center}
+  .qd-area td{background:#eef2f8;font-weight:800;color:var(--blue);font-size:12px;padding:6px 8px;border-top:1px solid var(--line)}
+  .qd-table td{padding:6px 8px;border-bottom:1px solid var(--line);font-size:12px;vertical-align:top}
+  .qd-table td .sub{font-size:10.5px;color:var(--muted);font-style:italic}
+  .qd-totwrap{display:flex;justify-content:flex-end}
+  .qd-tot{width:62%;min-width:230px}
+  .qd-tr{display:flex;justify-content:space-between;font-size:12px;padding:4px 8px;color:#4a566e}
+  .qd-tr.grand{background:var(--blue);color:#fff;font-weight:800;font-size:15px;border-radius:8px;padding:9px 10px;margin-top:5px}
+  .qd-foot{margin-top:14px;border-top:1px solid var(--line);padding-top:10px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .qd-foot .bank{white-space:pre-line;color:#4a566e}
 </style>
 </head>
 <body>
@@ -143,10 +175,14 @@
 /* ---------------- DATA ---------------- */
 const DEFAULT_SETTINGS = {
   company: "AC Electrical",
+  regName: "Uitenhage Electrical CC t/a AC Electrical",
   tagline: "Powering your world with precision and reliability.",
   phone: "063 049 8081",
   email: "acelec.pe@gmail.com",
-  vatNo: "",
+  address: "64 2nd Avenue, Newton Park, Port Elizabeth, 6055",
+  vatNo: "4330314248",
+  bank: "",
+  logo: "", logoRatio: 0,
   quotePrefix: "Q",
   spokenLang: "en-ZA",
   materialMarkup: 25, labourRate: 350, travelFee: 250, vat: 15
@@ -181,16 +217,19 @@ function langName(code){ const l=LANGS.find(x=>x.code===code); return l?l.name:"
 // Client-facing wording per language. (af/xh are starter translations — refine in the app.)
 const I18N = {
   en:{ quotation:"Quotation", quoteNo:"Quote No.", date:"Date", contact:"Contact", to:"To", site:"Site", vatNo:"VAT No.",
+    desc:"Description", qty:"Qty", unit:"Unit",
     materials:"Materials", inclMarkup:"incl. {p}% markup", labour:"Labour", hrs:"hrs", travel:"Travel",
     subtotal:"Subtotal (excl. VAT)", vat:"VAT", total:"Total", validity:"This quotation is valid for 30 days.",
     there:"there", premises:"your premises",
     msg:"Hi {client},\n\nThank you for your time today. Please find your quote ({number}) from {company} for the work at {site}, attached as a PDF.\n\nTotal incl. VAT: {total}\n\nThis quote is valid for 30 days. Reply to accept and we'll book you in.\n\n{company}{phoneline}" },
   af:{ quotation:"Kwotasie", quoteNo:"Kwotasie-nr.", date:"Datum", contact:"Kontak", to:"Aan", site:"Perseel", vatNo:"BTW-nr.",
+    desc:"Beskrywing", qty:"Hoev.", unit:"Eenheid",
     materials:"Materiaal", inclMarkup:"sluit {p}% opslag in", labour:"Arbeid", hrs:"uur", travel:"Reiskoste",
     subtotal:"Subtotaal (sonder BTW)", vat:"BTW", total:"Totaal", validity:"Hierdie kwotasie is 30 dae geldig.",
     there:"daar", premises:"u perseel",
     msg:"Hallo {client},\n\nBaie dankie vir u tyd vandag. Hierby is u kwotasie ({number}) van {company} vir die werk by {site}, aangeheg as 'n PDF.\n\nTotaal (BTW ingesluit): {total}\n\nHierdie kwotasie is 30 dae geldig. Antwoord om te aanvaar, dan bespreek ons u in.\n\n{company}{phoneline}" },
   xh:{ quotation:"Ikhowuthi", quoteNo:"Inombolo yekhowuthi", date:"Umhla", contact:"Uqhagamshelwano", to:"Ku", site:"Indawo", vatNo:"Inombolo ye-VAT",
+    desc:"Inkcazo", qty:"Inani", unit:"Iyunithi",
     materials:"Izixhobo", inclMarkup:"kuquka i-markup ye-{p}%", labour:"Umsebenzi", hrs:"iiyure", travel:"Uhambo",
     subtotal:"Isabelo (ngaphandle kwe-VAT)", vat:"i-VAT", total:"Iyonke", validity:"Le khowuthi isebenza iintsuku ezingama-30.",
     there:"molo", premises:"kwindawo yakho",
@@ -369,49 +408,91 @@ function quoteGroups(job){
   const gset=new Set((job.sections||[]).map(x=>x.id)); const extra=job.lineItems.filter(li=>!gset.has(li.sectionId)); if(extra.length) groups.push({title:"Adjustments",items:extra});
   return groups;
 }
+const NAVY=[27,44,79], SKY=[52,179,228], GREY=[120,128,143], INK=[35,49,77], LINE=[225,229,238];
 function generatePdfBlob(job){
   const { jsPDF }=window.jspdf;
   const doc=new jsPDF({unit:"pt",format:"a4"});
   const s=data.settings, t=totals(job), tx=LX(job);
-  const W=doc.internal.pageSize.getWidth(); const M=42, colAmt=W-M; let y=52;
-  doc.setFont("helvetica","bold"); doc.setTextColor(27,44,79); doc.setFontSize(20); doc.text(s.company||"",M,y);
-  if(s.tagline){ y+=14; doc.setFont("helvetica","italic"); doc.setTextColor(120); doc.setFontSize(9); doc.text(s.tagline,M,y); }
-  doc.setFont("helvetica","normal"); doc.setTextColor(60); doc.setFontSize(10);
-  doc.text(tx.quoteNo+": "+numberFor(job), colAmt, 52, {align:"right"});
-  doc.text(tx.date+": "+dateStr(job.created||Date.now()), colAmt, 66, {align:"right"});
-  y+=16; doc.setDrawColor(27,44,79); doc.setLineWidth(1.4); doc.line(M,y,W-M,y); doc.setLineWidth(1); y+=14;
-  doc.setFont("helvetica","bold"); doc.setTextColor(27,44,79); doc.setFontSize(12); doc.text(tx.quotation.toUpperCase(), M, y); y+=18;
-  doc.setFont("helvetica","normal"); doc.setTextColor(40); doc.setFontSize(10);
-  if(s.phone||s.email){ doc.text(tx.contact+": "+[s.phone,s.email].filter(Boolean).join("   "),M,y); y+=15; }
-  doc.text(tx.to+": "+(job.client||"-"),M,y); y+=15;
-  doc.text(tx.site+": "+(job.address||"-"),M,y); y+=15;
-  if(s.vatNo){ doc.text(tx.vatNo+": "+s.vatNo,M,y); y+=15; }
-  y+=8;
+  const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
+  const M=40, R=W-M; let y=46;
+  const setC=(c)=>doc.setTextColor(c[0],c[1],c[2]);
+  const setF=(c)=>doc.setFillColor(c[0],c[1],c[2]);
+  const setD=(c)=>doc.setDrawColor(c[0],c[1],c[2]);
+
+  // ----- letterhead -----
+  let bx=M, brandX=M;
+  if(s.logo){ try{ const h=44, w=Math.min(150, h*(s.logoRatio||3)); doc.addImage(s.logo, /png/i.test(s.logo)?"PNG":"JPEG", M, y-4, w, h); brandX=M+w+12; }catch(e){ brandX=M; } }
+  else { setF(NAVY); doc.circle(M+20, y+16, 20, "F"); setC([255,255,255]); doc.setFont("helvetica","bold"); doc.setFontSize(15); doc.text("AC", M+20, y+21, {align:"center"}); brandX=M+52; }
+  setC(NAVY); doc.setFont("helvetica","bold"); doc.setFontSize(19); doc.text(s.company||"", brandX, y+10);
+  let by=y+10;
+  if(s.tagline){ by+=13; doc.setFont("helvetica","italic"); doc.setFontSize(9); setC([180,140,40]); doc.text(s.tagline, brandX, by); }
+  if(s.regName){ by+=12; doc.setFont("helvetica","normal"); doc.setFontSize(8); setC(GREY); doc.text(s.regName, brandX, by); }
+  // right meta
+  setC(NAVY); doc.setFont("helvetica","bold"); doc.setFontSize(15); doc.text(tx.quotation.toUpperCase(), R, y+8, {align:"right"});
+  doc.setFont("helvetica","normal"); doc.setFontSize(9.5); setC(GREY);
+  doc.text(tx.quoteNo, R-92, y+26); setC(INK); doc.setFont("helvetica","bold"); doc.text(numberFor(job), R, y+26, {align:"right"});
+  doc.setFont("helvetica","normal"); setC(GREY); doc.text(tx.date, R-92, y+40); setC(INK); doc.setFont("helvetica","bold"); doc.text(dateStr(job.created||Date.now()), R, y+40, {align:"right"});
+  y=Math.max(by, y+48)+12;
+  setD(NAVY); doc.setLineWidth(1.6); doc.line(M,y,R,y); doc.setLineWidth(1); y+=18;
+
+  // ----- FROM / TO -----
+  const colMid=M+(R-M)/2;
+  function block(x, label, name, lines){
+    let yy=y; setC(GREY); doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.text(label, x, yy); yy+=13;
+    setC(INK); doc.setFontSize(11); doc.text(name||"-", x, yy); yy+=13;
+    doc.setFont("helvetica","normal"); doc.setFontSize(9); setC([74,86,110]);
+    (lines||[]).forEach(ln=>{ if(ln){ const wrapped=doc.splitTextToSize(ln, (colMid-x)-14); wrapped.forEach(w=>{ doc.text(w,x,yy); yy+=12; }); } });
+    return yy;
+  }
+  const fromLines=[ s.vatNo?(tx.vatNo+": "+s.vatNo):"", s.address||"", [s.phone,s.email].filter(Boolean).join("  ·  ") ];
+  const y1=block(M, "FROM", s.regName||s.company, fromLines);
+  const y2=block(colMid, tx.to.toUpperCase(), job.client, [ job.address||"", job.phone||"" ]);
+  y=Math.max(y1,y2)+10;
+
+  // ----- table header -----
+  const cQty=R-200, cUnit=R-110, cTot=R;
+  function tableHead(){
+    setF(NAVY); doc.rect(M, y, R-M, 18, "F"); setC([255,255,255]); doc.setFont("helvetica","bold"); doc.setFontSize(8.5);
+    doc.text(tx.desc.toUpperCase(), M+6, y+12); doc.text(tx.qty.toUpperCase(), cQty, y+12, {align:"center"});
+    doc.text(tx.unit.toUpperCase(), cUnit, y+12, {align:"right"}); doc.text(tx.total.toUpperCase(), cTot-4, y+12, {align:"right"});
+    y+=18;
+  }
+  tableHead();
   quoteGroups(job).forEach(g=>{
-    if(y>770){ doc.addPage(); y=52; }
-    doc.setFont("helvetica","bold"); doc.setTextColor(27,44,79); doc.setFontSize(11); doc.text(g.title,M,y);
-    y+=5; doc.setDrawColor(225); doc.line(M,y,W-M,y); y+=15;
-    doc.setFont("helvetica","normal"); doc.setTextColor(40); doc.setFontSize(10);
+    if(y>H-120){ doc.addPage(); y=46; tableHead(); }
+    setF([238,242,248]); doc.rect(M, y, R-M, 16, "F"); setC(NAVY); doc.setFont("helvetica","bold"); doc.setFontSize(9.5);
+    doc.text(g.title, M+6, y+11); y+=16;
     g.items.forEach(li=>{
-      if(y>790){ doc.addPage(); y=52; }
-      doc.text(String(li.qty)+"x",M,y);
-      doc.text(li.name,M+34,y);
-      doc.text(randsPdf(lineSell(li)*li.qty),colAmt,y,{align:"right"});
-      y+=15;
+      if(y>H-110){ doc.addPage(); y=46; tableHead(); }
+      doc.setFont("helvetica","normal"); doc.setFontSize(9.5); setC(INK);
+      doc.text(li.name, M+6, y+12);
+      doc.text(String(li.qty), cQty, y+12, {align:"center"});
+      doc.text(randsPdf(lineSell(li)), cUnit, y+12, {align:"right"});
+      doc.text(randsPdf(lineSell(li)*li.qty), cTot-4, y+12, {align:"right"});
+      y+=17; setD(LINE); doc.line(M,y,R,y);
     });
-    y+=7;
   });
-  if(y>690){ doc.addPage(); y=52; }
-  doc.setDrawColor(27,44,79); doc.line(M,y,W-M,y); y+=17;
-  function row(lbl,val,big){ doc.setFont("helvetica",big?"bold":"normal"); doc.setFontSize(big?13:10); if(big){doc.setTextColor(27,44,79);}else{doc.setTextColor(90);} doc.text(lbl,M,y); doc.text(val,colAmt,y,{align:"right"}); y+=big?20:15; }
-  row(tx.materials+" ("+fillTpl(tx.inclMarkup,{p:s.materialMarkup})+")", randsPdf(t.matSell));
-  row(tx.labour+" ("+(Math.round(t.hours*10)/10)+" "+tx.hrs+" @ "+randsPdf(s.labourRate)+")", randsPdf(t.labour));
-  row(tx.travel, randsPdf(t.travel));
-  row(tx.subtotal, randsPdf(t.sub));
-  row(tx.vat+" @ "+s.vat+"%", randsPdf(t.vat));
-  row(tx.total.toUpperCase(), randsPdf(t.total), true);
-  y+=8; doc.setFont("helvetica","italic"); doc.setTextColor(120); doc.setFontSize(9);
-  doc.text(tx.validity,M,y);
+  y+=14;
+  if(y>H-150){ doc.addPage(); y=46; }
+
+  // ----- totals (right box) -----
+  const tx0=R-230, lblX=tx0+4, valX=R-4;
+  function trow(lbl,val){ doc.setFont("helvetica","normal"); doc.setFontSize(9.5); setC([74,86,110]); doc.text(lbl,lblX,y); doc.text(val,valX,y,{align:"right"}); y+=15; }
+  trow(tx.materials+" ("+fillTpl(tx.inclMarkup,{p:s.materialMarkup})+")", randsPdf(t.matSell));
+  trow(tx.labour+" ("+(Math.round(t.hours*10)/10)+" "+tx.hrs+" @ "+randsPdf(s.labourRate)+")", randsPdf(t.labour));
+  trow(tx.travel, randsPdf(t.travel));
+  trow(tx.subtotal, randsPdf(t.sub));
+  trow(tx.vat+" @ "+s.vat+"%", randsPdf(t.vat));
+  y+=2; setF(NAVY); doc.roundedRect(tx0, y, R-tx0, 26, 4, 4, "F");
+  setC([255,255,255]); doc.setFont("helvetica","bold"); doc.setFontSize(13);
+  doc.text(tx.total.toUpperCase(), lblX, y+17); doc.text(randsPdf(t.total), valX, y+17, {align:"right"});
+  y+=26+22;
+
+  // ----- footer -----
+  setD(LINE); doc.line(M,y,R,y); y+=14;
+  doc.setFont("helvetica","italic"); doc.setFontSize(9); setC(GREY); doc.text(tx.validity, M, y);
+  if(s.bank){ doc.setFont("helvetica","normal"); setC([74,86,110]); doc.setFontSize(8.5);
+    doc.splitTextToSize(s.bank, (R-M)/2).forEach((ln,i)=>doc.text(ln, M, y+14+i*11)); }
   return doc.output("blob");
 }
 function dataURLtoFile(durl, name){
@@ -743,36 +824,50 @@ function viewQuote(){
   </div>`;
 }
 
+function quoteDocHTML(job){
+  const s=data.settings, t=totals(job), tx=LX(job);
+  const brand = s.logo ? `<img class="qd-logo" src="${s.logo}"/>` : `<div class="qd-badge">AC</div>`;
+  const rows = quoteGroups(job).map(g=>
+    `<tr class="qd-area"><td colspan="4">${esc(g.title)}</td></tr>`+
+    g.items.map(li=>`<tr><td>${esc(li.name)}</td><td class="c">${li.qty}</td><td class="r">${rands(lineSell(li))}</td><td class="r">${rands(lineSell(li)*li.qty)}</td></tr>`).join("")
+  ).join("");
+  const fromLines=[ s.vatNo?(tx.vatNo+": "+esc(s.vatNo)):"", esc(s.address||""), [s.phone,s.email].filter(Boolean).map(esc).join(" · ") ]
+    .filter(Boolean).map(x=>`<div class="ln">${x}</div>`).join("");
+  return `<div class="qdoc">
+    <div class="qd-head">
+      <div class="qd-brand">${brand}<div><div class="qd-co">${esc(s.company)}</div>${s.tagline?`<div class="qd-tag">${esc(s.tagline)}</div>`:""}${s.regName?`<div class="qd-reg">${esc(s.regName)}</div>`:""}</div></div>
+      <div class="qd-meta"><div class="qd-title">${esc(tx.quotation.toUpperCase())}</div>
+        <div class="qd-mrow">${esc(tx.quoteNo)}<b>${esc(numberFor(job))}</b></div>
+        <div class="qd-mrow">${esc(tx.date)}<b>${esc(dateStr(job.created))}</b></div></div>
+    </div>
+    <div class="qd-rule"></div>
+    <div class="qd-fromto">
+      <div><div class="qd-lbl">FROM</div><b>${esc(s.regName||s.company)}</b>${fromLines}</div>
+      <div><div class="qd-lbl">${esc(tx.to.toUpperCase())}</div><b>${esc(job.client||"-")}</b><div class="ln">${esc(job.address||"")}</div>${job.phone?`<div class="ln">${esc(job.phone)}</div>`:""}</div>
+    </div>
+    <table class="qd-table">
+      <thead><tr><th>${esc(tx.desc)}</th><th class="c">${esc(tx.qty)}</th><th class="r">${esc(tx.unit)}</th><th class="r">${esc(tx.total)}</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="qd-totwrap"><div class="qd-tot">
+      <div class="qd-tr"><span>${esc(tx.materials)} (${esc(fillTpl(tx.inclMarkup,{p:s.materialMarkup}))})</span><span>${rands(t.matSell)}</span></div>
+      <div class="qd-tr"><span>${esc(tx.labour)} (${Math.round(t.hours*10)/10} ${esc(tx.hrs)} @ ${rands(s.labourRate)})</span><span>${rands(t.labour)}</span></div>
+      <div class="qd-tr"><span>${esc(tx.travel)}</span><span>${rands(t.travel)}</span></div>
+      <div class="qd-tr"><span>${esc(tx.subtotal)}</span><span>${rands(t.sub)}</span></div>
+      <div class="qd-tr"><span>${esc(tx.vat)} @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
+      <div class="qd-tr grand"><span>${esc(tx.total)}</span><span>${rands(t.total)}</span></div>
+    </div></div>
+    <div class="qd-foot"><div>${esc(tx.validity)}</div>${s.bank?`<div class="bank">${esc(s.bank)}</div>`:""}</div>
+  </div>`;
+}
 function viewSent(){
-  const j=currentJob(); const s=data.settings, t=totals(j);
-  const groups=[];
-  (j.sections||[]).forEach(sec=>{ const its=j.lineItems.filter(li=>li.sectionId===sec.id); if(its.length) groups.push({title:sec.title,items:its}); });
-  const grouped=new Set((j.sections||[]).map(s=>s.id));
-  const extra=j.lineItems.filter(li=>!grouped.has(li.sectionId));
-  if(extra.length) groups.push({title:"Adjustments",items:extra});
-  const docBody=groups.map(g=>`<div class="docsec">${esc(g.title)}</div>`+g.items.map(li=>`<div class="kv"><span>${esc(li.name)} ×${li.qty}</span><span>${rands(lineSell(li)*li.qty)}</span></div>`).join("")).join("");
-  const msg=clientMessage(j); const tx=LX(j);
+  const j=currentJob(); const msg=clientMessage(j);
   return topbar("Quote Sent","jobs")+`<div class="wrap">
     <div class="successbox"><div class="ic">✓</div>
       <div style="font-size:19px;font-weight:800">${esc(numberFor(j))} sent via ${esc(j.sentVia||"")}!</div>
       <div class="muted small">In <b>${esc(langName(j.lang))}</b> — on a phone your share menu opens with the <b>PDF attached</b>; pick the contact and send.</div></div>
-    <div class="card">
-      <div class="doc-head"><div class="co">${esc(s.company)}</div>
-        ${s.tagline?`<div class="tag">${esc(s.tagline)}</div>`:""}<div class="ti">${esc(tx.quotation)}</div></div>
-      <div class="kv"><span class="muted">${esc(tx.quoteNo)}</span><span>${esc(numberFor(j))}</span></div>
-      <div class="kv"><span class="muted">${esc(tx.date)}</span><span>${esc(dateStr(j.created))}</span></div>
-      ${(s.phone||s.email)?`<div class="kv"><span class="muted">${esc(tx.contact)}</span><span>${esc(s.phone||"")}${(s.phone&&s.email)?" · ":""}${esc(s.email||"")}</span></div>`:""}
-      <div class="kv"><span class="muted">${esc(tx.to)}</span><span>${esc(j.client||"-")}</span></div>
-      <div class="kv"><span class="muted">${esc(tx.site)}</span><span>${esc(j.address||"-")}</span></div>
-      ${s.vatNo?`<div class="kv"><span class="muted">${esc(tx.vatNo)}</span><span>${esc(s.vatNo)}</span></div>`:""}
-      ${docBody}
-      <div style="height:6px"></div>
-      <div class="kv"><span>${esc(tx.labour)} (${Math.round(t.hours*10)/10} ${esc(tx.hrs)})</span><span>${rands(t.labour)}</span></div>
-      <div class="kv"><span>${esc(tx.travel)}</span><span>${rands(t.travel)}</span></div>
-      <div class="totrow"><span class="lbl">${esc(tx.vat)} @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
-      <div class="totrow big"><span>${esc(tx.total)}</span><span>${rands(t.total)}</span></div>
-    </div>
-    <h2>What the client receives (in ${esc(langName(j.lang))})</h2>
+    ${quoteDocHTML(j)}
+    <h2>The message that goes with it (in ${esc(langName(j.lang))})</h2>
     <div class="send-preview">${esc(msg)}</div>
     <button class="btn primary" data-go="jobs" style="margin-top:16px">Back to jobs</button>
   </div>`;
@@ -787,11 +882,17 @@ function viewSettings(){
   let body;
   if(tab==="markups"){
     body=`<div class="card">
+      <label>Company logo (shows on every quote)</label>
+      <input type="file" id="s-logo" accept="image/*"/>
+      ${s.logo?`<div style="margin-top:8px;display:flex;align-items:center;gap:10px"><img src="${s.logo}" style="max-height:50px;max-width:150px;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff"/><button class="btn ghost sm" id="s-logo-clear">Remove</button></div>`:`<div class="hint">No logo yet — a navy “AC” badge is used until you add one.</div>`}
       <label>Company name (on quotes)</label><input id="s-company" value="${esc(s.company)}"/>
+      <label>Registered name (legal entity)</label><input id="s-regname" value="${esc(s.regName||"")}"/>
       <label>Tagline / slogan</label><input id="s-tagline" value="${esc(s.tagline||"")}"/>
+      <label>Business address</label><textarea id="s-address" style="min-height:54px">${esc(s.address||"")}</textarea>
       <label>Contact phone</label><input id="s-phone" value="${esc(s.phone||"")}"/>
       <label>Contact email</label><input id="s-email" value="${esc(s.email||"")}"/>
       <label>VAT number (leave blank if not registered)</label><input id="s-vatno" value="${esc(s.vatNo||"")}"/>
+      <label>Bank details (footer of the quote)</label><textarea id="s-bank" style="min-height:64px" placeholder="FNB Business Account\nAcc No: ...\nBranch: ...">${esc(s.bank||"")}</textarea>
       <label>Quote number prefix</label><input id="s-prefix" value="${esc(s.quotePrefix||"Q")}"/>
       <label>Material markup (%)</label><input id="s-markup" type="number" value="${s.materialMarkup}"/>
       <div class="hint">Added on top of what you pay for materials.</div>
@@ -948,7 +1049,10 @@ function bind(){
   if(state.view==="settings"){
     document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ state.settingsTab=b.dataset.tab; render(); });
     const ss=document.getElementById("s-save");
-    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q"; const sp=document.getElementById("s-spoken"); if(sp) s.spokenLang=sp.value; s.materialMarkup=num("s-markup"); s.labourRate=num("s-labour"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
+    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.regName=val("s-regname"); s.address=val("s-address"); s.bank=val("s-bank"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q"; const sp=document.getElementById("s-spoken"); if(sp) s.spokenLang=sp.value; s.materialMarkup=num("s-markup"); s.labourRate=num("s-labour"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
+    const lf=document.getElementById("s-logo");
+    if(lf) lf.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ data.settings.logo=r.result; data.settings.logoRatio=img.width/img.height||3; save(); flash("Logo added"); render(); }; img.onerror=()=>{ data.settings.logo=r.result; data.settings.logoRatio=3; save(); render(); }; img.src=r.result; }; r.readAsDataURL(f); };
+    const lc=document.getElementById("s-logo-clear"); if(lc) lc.onclick=()=>{ data.settings.logo=""; data.settings.logoRatio=0; save(); render(); };
     const ps=document.getElementById("p-save");
     if(ps) ps.onclick=()=>{ document.querySelectorAll("[data-price]").forEach(inp=>{ const c=data.catalogue.find(x=>x.id===inp.dataset.price); if(c) c.cost=parseFloat(inp.value)||0; }); save(); flash("Prices saved"); };
     document.querySelectorAll("[data-pricedel]").forEach(b=>b.onclick=()=>{ if(confirm("Remove this item from the price list?")){ data.catalogue=data.catalogue.filter(c=>c.id!==b.dataset.pricedel); save(); render(); } });
