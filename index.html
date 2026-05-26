@@ -147,6 +147,7 @@ const DEFAULT_SETTINGS = {
   phone: "063 049 8081",
   email: "acelec.pe@gmail.com",
   vatNo: "",
+  quotePrefix: "Q",
   materialMarkup: 25, labourRate: 350, travelFee: 250, vat: 15
 };
 
@@ -175,14 +176,14 @@ const DEMO_SECTIONS = [
 ];
 
 /* ---------------- STATE / STORAGE ---------------- */
-let state = { view:"jobs", jobId:null, settingsTab:"markups", activeSec:null };
+let state = { view:"jobs", jobId:null, settingsTab:"markups", activeSec:null, search:"", sort:"new" };
 let data = load();
 let lastFocusId = null;
 
 function load(){
   try{
     const raw = localStorage.getItem("tradeserv");
-    if(raw){ const d=JSON.parse(raw); d.settings={...DEFAULT_SETTINGS, ...(d.settings||{})}; if(!d.jobs) d.jobs=[]; return d; }
+    if(raw){ const d=JSON.parse(raw); d.settings={...DEFAULT_SETTINGS, ...(d.settings||{})}; if(!d.jobs) d.jobs=[]; d.seq=Math.max(d.seq||0, ...d.jobs.map(j=>j.number||0), 0); return d; }
   }catch(e){}
   return { settings:{...DEFAULT_SETTINGS}, jobs:[] };
 }
@@ -194,7 +195,11 @@ function normalize(job){
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function rands(n){ return "R" + (Math.round(n*100)/100).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function randsPdf(n){ return "R"+(Math.round(n*100)/100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
 function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function nextNumber(){ data.seq=(data.seq||0)+1; return data.seq; }
+function numberFor(job){ return job.number ? ((data.settings.quotePrefix||"Q")+"-"+String(job.number).padStart(4,"0")) : "—"; }
+function dateStr(ts){ try{ return new Date(ts).toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return ""; } }
 
 /* ---------------- DEMO AI: text -> line items ---------------- */
 const NUMWORDS = {a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
@@ -245,6 +250,7 @@ function buildQuote(job){
   job.lineItems=items;
   job.status=items.length?"quoted":"draft";
   if(job.travel==null) job.travel=data.settings.travelFee;
+  if(!job.number) job.number=nextNumber();
   save();
 }
 
@@ -316,15 +322,93 @@ function addLine(job, cat, qty, sec){
 function waNumber(phone){ let d=(phone||"").replace(/\D/g,""); if(!d) return ""; if(d[0]==="0") d="27"+d.slice(1); else if(!d.startsWith("27")&&d.length<=10) d="27"+d; return d; }
 function clientMessage(job){
   const s=data.settings, t=totals(job);
-  return `Hi ${job.client||"there"},\n\nThank you for your time today. Please find your quote from ${s.company} for the work at ${job.address||"your premises"}.\n\nTotal incl. VAT: ${rands(t.total)}\n\nThis quote is valid for 30 days. Reply to accept and we'll book you in.\n\n${s.company}${s.phone?" · "+s.phone:""}`;
+  return `Hi ${job.client||"there"},\n\nThank you for your time today. Please find your quote (${numberFor(job)}) from ${s.company} for the work at ${job.address||"your premises"}, attached as a PDF.\n\nTotal incl. VAT: ${rands(t.total)}\n\nThis quote is valid for 30 days. Reply to accept and we'll book you in.\n\n${s.company}${s.phone?" · "+s.phone:""}`;
 }
-function doSend(job, channel){
-  const msg=clientMessage(job);
-  if(channel==="whatsapp"){ const num=waNumber(job.phone); window.open("https://wa.me/"+num+"?text="+encodeURIComponent(msg),"_blank"); }
-  else { window.location.href="mailto:"+encodeURIComponent(job.email||"")+"?subject="+encodeURIComponent("Quote from "+data.settings.company)+"&body="+encodeURIComponent(msg); }
-  job.status="sent"; job.sentVia=(channel==="whatsapp"?"WhatsApp":"Email"); save();
-  setTimeout(()=>go("sent", job.id), 300);
+
+/* ---- PDF (jsPDF, lazy-loaded from CDN) ---- */
+const JSPDF_URL="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+let jspdfPromise=null;
+function ensureJsPDF(){
+  if(window.jspdf&&window.jspdf.jsPDF) return Promise.resolve();
+  if(jspdfPromise) return jspdfPromise;
+  jspdfPromise=new Promise((res,rej)=>{ const s=document.createElement("script"); s.src=JSPDF_URL; s.onload=()=>res(); s.onerror=()=>rej(new Error("pdf lib failed")); document.head.appendChild(s); });
+  return jspdfPromise;
 }
+function quoteGroups(job){
+  const groups=[]; (job.sections||[]).forEach(sec=>{ const its=job.lineItems.filter(li=>li.sectionId===sec.id); if(its.length) groups.push({title:sec.title,items:its}); });
+  const gset=new Set((job.sections||[]).map(x=>x.id)); const extra=job.lineItems.filter(li=>!gset.has(li.sectionId)); if(extra.length) groups.push({title:"Adjustments",items:extra});
+  return groups;
+}
+function generatePdfBlob(job){
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:"pt",format:"a4"});
+  const s=data.settings, t=totals(job);
+  const W=doc.internal.pageSize.getWidth(); const M=42, colAmt=W-M; let y=52;
+  doc.setFont("helvetica","bold"); doc.setTextColor(27,44,79); doc.setFontSize(20); doc.text(s.company||"",M,y);
+  if(s.tagline){ y+=14; doc.setFont("helvetica","italic"); doc.setTextColor(120); doc.setFontSize(9); doc.text(s.tagline,M,y); }
+  doc.setFont("helvetica","normal"); doc.setTextColor(60); doc.setFontSize(10);
+  doc.text("Quote: "+numberFor(job), colAmt, 52, {align:"right"});
+  doc.text("Date: "+dateStr(job.created||Date.now()), colAmt, 66, {align:"right"});
+  y+=16; doc.setDrawColor(27,44,79); doc.setLineWidth(1.4); doc.line(M,y,W-M,y); doc.setLineWidth(1); y+=20;
+  doc.setTextColor(40); doc.setFontSize(10);
+  if(s.phone||s.email){ doc.text("Contact: "+[s.phone,s.email].filter(Boolean).join("   "),M,y); y+=15; }
+  doc.text("To: "+(job.client||"-"),M,y); y+=15;
+  doc.text("Site: "+(job.address||"-"),M,y); y+=15;
+  if(s.vatNo){ doc.text("VAT No: "+s.vatNo,M,y); y+=15; }
+  y+=8;
+  quoteGroups(job).forEach(g=>{
+    if(y>770){ doc.addPage(); y=52; }
+    doc.setFont("helvetica","bold"); doc.setTextColor(27,44,79); doc.setFontSize(11); doc.text(g.title,M,y);
+    y+=5; doc.setDrawColor(225); doc.line(M,y,W-M,y); y+=15;
+    doc.setFont("helvetica","normal"); doc.setTextColor(40); doc.setFontSize(10);
+    g.items.forEach(li=>{
+      if(y>790){ doc.addPage(); y=52; }
+      doc.text(String(li.qty)+"x",M,y);
+      doc.text(li.name,M+34,y);
+      doc.text(randsPdf(lineSell(li)*li.qty),colAmt,y,{align:"right"});
+      y+=15;
+    });
+    y+=7;
+  });
+  if(y>690){ doc.addPage(); y=52; }
+  doc.setDrawColor(27,44,79); doc.line(M,y,W-M,y); y+=17;
+  function row(lbl,val,big){ doc.setFont("helvetica",big?"bold":"normal"); doc.setFontSize(big?13:10); if(big){doc.setTextColor(27,44,79);}else{doc.setTextColor(90);} doc.text(lbl,M,y); doc.text(val,colAmt,y,{align:"right"}); y+=big?20:15; }
+  row("Materials (incl. "+s.materialMarkup+"% markup)", randsPdf(t.matSell));
+  row("Labour ("+(Math.round(t.hours*10)/10)+" hrs @ "+randsPdf(s.labourRate)+")", randsPdf(t.labour));
+  row("Travel", randsPdf(t.travel));
+  row("Subtotal (excl. VAT)", randsPdf(t.sub));
+  row("VAT @ "+s.vat+"%", randsPdf(t.vat));
+  row("TOTAL", randsPdf(t.total), true);
+  y+=8; doc.setFont("helvetica","italic"); doc.setTextColor(120); doc.setFontSize(9);
+  doc.text("This quotation is valid for 30 days.",M,y);
+  return doc.output("blob");
+}
+function dataURLtoFile(durl, name){
+  const a=durl.split(","), m=(a[0].match(/:(.*?);/)||[])[1]||"image/jpeg", bin=atob(a[1]); let n=bin.length; const u=new Uint8Array(n); while(n--) u[n]=bin.charCodeAt(n); return new File([u], name, {type:m});
+}
+function downloadBlob(blob, name){ const u=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),5000); }
+
+async function sendQuote(job, channel, includePhotos){
+  if(!job.number) job.number=nextNumber();
+  const msg=clientMessage(job), fname="Quote-"+numberFor(job)+".pdf";
+  let blob=null;
+  try{ await ensureJsPDF(); blob=generatePdfBlob(job); }catch(e){ blob=null; }
+  const files=[];
+  if(blob) files.push(new File([blob], fname, {type:"application/pdf"}));
+  if(includePhotos && job.photos && job.photos.length){ job.photos.forEach((p,i)=>{ try{ files.push(dataURLtoFile(p,"before-"+(i+1)+".jpg")); }catch(e){} }); }
+  // Phone path: native Share sheet genuinely attaches the PDF (+ photos)
+  if(navigator.canShare && files.length && navigator.canShare({files})){
+    try{ await navigator.share({ files, text: msg, title: "Quote "+numberFor(job) }); finishSend(job, channel); return; }
+    catch(e){ if(e && e.name==="AbortError"){ return; } }
+  }
+  // Fallback (desktop / no file-share): download the PDF, open the text channel
+  if(blob) downloadBlob(blob, fname);
+  if(channel==="whatsapp"){ window.open("https://wa.me/"+waNumber(job.phone)+"?text="+encodeURIComponent(msg),"_blank"); }
+  else { window.location.href="mailto:"+encodeURIComponent(job.email||"")+"?subject="+encodeURIComponent("Quote "+numberFor(job)+" from "+data.settings.company)+"&body="+encodeURIComponent(msg); }
+  flash(blob ? ("PDF downloaded — attach it in your "+(channel==="whatsapp"?"WhatsApp":"email")+" message.") : "Opened "+(channel==="whatsapp"?"WhatsApp":"email")+".");
+  finishSend(job, channel);
+}
+function finishSend(job, channel){ job.status="sent"; job.sentVia=(channel==="whatsapp"?"WhatsApp":"Email"); save(); setTimeout(()=>go("sent", job.id), 350); }
 
 /* ---------------- VOICE ENGINE ---------------- */
 let recog=null, listenState=null;
@@ -395,19 +479,55 @@ function render(){
   app().innerHTML=html; bind();
 }
 
-function viewJobs(){
-  const jobs=[...data.jobs].sort((a,b)=>b.created-a.created);
-  const list = jobs.length ? `<div class="joblist">`+jobs.map(j=>{
+function jobMatches(j,q){
+  if(!q) return true; q=q.toLowerCase();
+  return [numberFor(j), j.client, j.address, dateStr(j.created), j.phone].some(x=>x&&String(x).toLowerCase().includes(q));
+}
+function sortedJobs(){
+  const tot=j=>(j.lineItems&&j.lineItems.length)?totals(j).total:0;
+  let arr=data.jobs.filter(j=>jobMatches(j,state.search));
+  const by=state.sort;
+  if(by==="old") arr.sort((a,b)=>a.created-b.created);
+  else if(by==="number") arr.sort((a,b)=>(b.number||0)-(a.number||0));
+  else if(by==="client") arr.sort((a,b)=>(a.client||"~").localeCompare(b.client||"~"));
+  else if(by==="high") arr.sort((a,b)=>tot(b)-tot(a));
+  else if(by==="low") arr.sort((a,b)=>tot(a)-tot(b));
+  else arr.sort((a,b)=>b.created-a.created); // new
+  return arr;
+}
+function jobListHTML(){
+  if(!data.jobs.length) return `<div class="empty"><div class="ic">🧾</div><div>No jobs yet.<br>Tap “New Job” to quote your first site.</div></div>`;
+  const jobs=sortedJobs();
+  if(!jobs.length) return `<div class="empty small">No jobs match “${esc(state.search)}”.</div>`;
+  return `<div class="joblist">`+jobs.map(j=>{
     const badge=j.status==="sent"?'<span class="badge sent">Sent</span>':j.status==="quoted"?'<span class="badge quoted">Quoted</span>':'<span class="badge draft">Draft</span>';
     const tot=j.lineItems&&j.lineItems.length?rands(totals(j).total):"";
     return `<div class="card tap" data-job="${j.id}"><div class="meta"><div class="nm">${esc(j.client||"Unnamed client")}</div>
-      <div class="ad">${esc(j.address||"No address")}</div></div>
+      <div class="ad">${esc(numberFor(j))} · ${esc(dateStr(j.created))}${j.address?" · "+esc(j.address):""}</div></div>
       <div class="right"><div class="small" style="font-weight:700">${tot}</div>${badge}</div></div>`;
-  }).join("")+`</div>` : `<div class="empty"><div class="ic">🧾</div><div>No jobs yet.<br>Tap “New Job” to quote your first site.</div></div>`;
+  }).join("")+`</div>`;
+}
+function bindJobCards(){
+  document.querySelectorAll("[data-job]").forEach(el=>el.onclick=()=>{ const j=data.jobs.find(x=>x.id===el.dataset.job); normalize(j); go(j.lineItems&&j.lineItems.length?"quote":"capture", el.dataset.job); });
+}
+function refreshJobList(){ const box=document.getElementById("joblist-box"); if(box){ box.innerHTML=jobListHTML(); bindJobCards(); } }
+function viewJobs(){
   return topbar("Your Jobs")+`<div class="wrap">
-    <div class="row" style="margin-bottom:6px"><button class="btn ghost sm" data-go="settings" style="flex:0 0 auto">⚙︎ Settings</button></div>
-    ${list}</div>
-    <button class="btn amber fab" data-go="new">＋ New Job</button>`;
+    <div class="ip" style="margin-bottom:8px"><input id="job-search" placeholder="Search client, number, date…" value="${esc(state.search)}"/>${fieldMic("job-search")}</div>
+    <div class="row" style="gap:8px;margin-bottom:10px;align-items:stretch">
+      <select id="job-sort" style="flex:1">
+        <option value="new"${state.sort==="new"?" selected":""}>Newest first</option>
+        <option value="old"${state.sort==="old"?" selected":""}>Oldest first</option>
+        <option value="number"${state.sort==="number"?" selected":""}>Quote number</option>
+        <option value="client"${state.sort==="client"?" selected":""}>Client A–Z</option>
+        <option value="high"${state.sort==="high"?" selected":""}>Total: high → low</option>
+        <option value="low"${state.sort==="low"?" selected":""}>Total: low → high</option>
+      </select>
+      <button class="btn ghost sm" data-go="settings" style="flex:0 0 auto">⚙︎</button>
+    </div>
+    <div id="joblist-box">${jobListHTML()}</div>
+  </div>
+  <button class="btn amber fab" data-go="new">＋ New Job</button>`;
 }
 
 function fieldMic(id){ return `<button class="ip-mic" data-fieldmic="${id}">🎤</button>`; }
@@ -500,7 +620,7 @@ function viewQuote(){
   return topbar("Review Quote","capture")+`<div class="wrap">
     <div class="card" style="display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:12px">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700">${esc(j.client||"Unnamed client")}</div>
+        <div style="font-weight:700">${esc(j.client||"Unnamed client")} <span class="muted small">${esc(numberFor(j))}</span></div>
         <div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(j.address||"No address")}${j.phone?" · "+esc(j.phone):""}</div>
       </div>
       <button class="btn ghost sm" data-go="capture">✎ Edit</button>
@@ -516,11 +636,12 @@ function viewQuote(){
       <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
       <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
     </div>
+    ${(j.photos&&j.photos.length)?`<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:16px 2px 2px"><input type="checkbox" id="inc-photos" checked style="width:auto;margin:0"/> Attach ${j.photos.length} before-photo${j.photos.length>1?"s":""} to the message</label>`:""}
     <div class="row">
-      <button class="btn green" id="send-wa">WhatsApp</button>
-      <button class="btn primary" id="send-email">Email</button>
+      <button class="btn green" id="send-wa">📄 WhatsApp</button>
+      <button class="btn primary" id="send-email">📄 Email</button>
     </div>
-    <div class="hint" style="text-align:center;margin-top:8px">…or just say “send by WhatsApp” / “send by email”.</div>
+    <div class="hint" style="text-align:center;margin-top:8px">Sends the quote as a PDF. On a phone your share menu opens — pick WhatsApp or email. You can also say “send by WhatsApp”.</div>
     <button class="btn ghost" data-go="jobs">Save & close</button>
   </div>`;
 }
@@ -536,11 +657,13 @@ function viewSent(){
   const msg=clientMessage(j);
   return topbar("Quote Sent","jobs")+`<div class="wrap">
     <div class="successbox"><div class="ic">✓</div>
-      <div style="font-size:19px;font-weight:800">Quote sent via ${esc(j.sentVia||"")}!</div>
-      <div class="muted small">On a phone this opens ${esc(j.sentVia||"the app")} with the message ready to send as a branded quote.</div></div>
+      <div style="font-size:19px;font-weight:800">${esc(numberFor(j))} sent via ${esc(j.sentVia||"")}!</div>
+      <div class="muted small">On a phone, your share menu opens with the <b>PDF attached</b> — pick the contact and send.</div></div>
     <div class="card">
       <div class="doc-head"><div class="co">${esc(s.company)}</div>
         ${s.tagline?`<div class="tag">${esc(s.tagline)}</div>`:""}<div class="ti">Quotation</div></div>
+      <div class="kv"><span class="muted">Quote No.</span><span>${esc(numberFor(j))}</span></div>
+      <div class="kv"><span class="muted">Date</span><span>${esc(dateStr(j.created))}</span></div>
       ${(s.phone||s.email)?`<div class="kv"><span class="muted">Contact</span><span>${esc(s.phone||"")}${(s.phone&&s.email)?" · ":""}${esc(s.email||"")}</span></div>`:""}
       <div class="kv"><span class="muted">To</span><span>${esc(j.client||"-")}</span></div>
       <div class="kv"><span class="muted">Site</span><span>${esc(j.address||"-")}</span></div>
@@ -571,6 +694,7 @@ function viewSettings(){
       <label>Contact phone</label><input id="s-phone" value="${esc(s.phone||"")}"/>
       <label>Contact email</label><input id="s-email" value="${esc(s.email||"")}"/>
       <label>VAT number (leave blank if not registered)</label><input id="s-vatno" value="${esc(s.vatNo||"")}"/>
+      <label>Quote number prefix</label><input id="s-prefix" value="${esc(s.quotePrefix||"Q")}"/>
       <label>Material markup (%)</label><input id="s-markup" type="number" value="${s.materialMarkup}"/>
       <div class="hint">Added on top of what you pay for materials.</div>
       <label>Labour rate (R per hour)</label><input id="s-labour" type="number" value="${s.labourRate}"/>
@@ -610,7 +734,7 @@ function topbarVoice(){
   }
   if(state.view==="quote"){
     startListen({ title:"Listening…", sub:"e.g. “add two plugs” or “send by WhatsApp”",
-      onFinal:(t)=>{ if(!t){return;} if(isSendCmd(t)){ const ch=sendChannel(t)||"whatsapp"; doSend(j,ch); return; } const r=applyEdit(j,t); buildKeepExtras(j); flash(r); render(); } });
+      onFinal:(t)=>{ if(!t){return;} if(isSendCmd(t)){ const ch=sendChannel(t)||"whatsapp"; sendQuote(j,ch,!!(j.photos&&j.photos.length)); return; } const r=applyEdit(j,t); buildKeepExtras(j); flash(r); render(); } });
     return;
   }
   if(state.view==="jobs"){ startListen({ title:"Say a command", sub:"e.g. “new job”", onFinal:(t)=>{ if(/new job|new quote|add job/i.test(t)) go("new"); else flash("Try saying “new job”."); } }); return; }
@@ -625,10 +749,16 @@ function bind(){
   document.querySelectorAll("[data-job]").forEach(el=>el.onclick=()=>{ const j=data.jobs.find(x=>x.id===el.dataset.job); normalize(j); go(j.lineItems&&j.lineItems.length?"quote":"capture", el.dataset.job); });
   const tv=document.querySelector("[data-voice]"); if(tv) tv.onclick=topbarVoice;
 
+  if(state.view==="jobs"){
+    const sb=document.getElementById("job-search"); if(sb) sb.oninput=()=>{ state.search=sb.value; refreshJobList(); };
+    const so=document.getElementById("job-sort"); if(so) so.onchange=()=>{ state.sort=so.value; refreshJobList(); };
+    const sm=document.querySelector('[data-fieldmic="job-search"]'); if(sm) sm.onclick=()=>dictateInto("job-search",(v)=>{ state.search=v; refreshJobList(); });
+  }
+
   if(state.view==="new"){
     document.querySelectorAll("[data-fieldmic]").forEach(b=>b.onclick=()=>dictateInto(b.dataset.fieldmic));
     document.getElementById("f-save").onclick=()=>{
-      const job={ id:uid(), created:Date.now(), status:"draft", client:val("f-client"), address:val("f-address"),
+      const job={ id:uid(), number:nextNumber(), created:Date.now(), status:"draft", client:val("f-client"), address:val("f-address"),
         email:val("f-email"), phone:val("f-phone"), sections:[], photos:[], lineItems:null, travel:null };
       data.jobs.push(job); save(); state.activeSec=null; go("capture", job.id);
     };
@@ -673,14 +803,16 @@ function bind(){
     });
     const ve=document.getElementById("voice-edit"); if(ve) ve.onclick=()=>topbarVoice();
     const et=document.getElementById("edit-travel"); if(et) et.onclick=()=>{ const v=prompt("Travel fee (R):", j.travel!=null?j.travel:data.settings.travelFee); if(v!=null){ j.travel=parseFloat(v)||0; save(); render(); } };
-    document.getElementById("send-wa").onclick=()=>doSend(j,"whatsapp");
-    document.getElementById("send-email").onclick=()=>doSend(j,"email");
+    ensureJsPDF().catch(()=>{}); // preload so the Share sheet opens within the tap
+    const incPhotos=()=>{ const c=document.getElementById("inc-photos"); return c?c.checked:false; };
+    document.getElementById("send-wa").onclick=()=>sendQuote(j,"whatsapp",incPhotos());
+    document.getElementById("send-email").onclick=()=>sendQuote(j,"email",incPhotos());
   }
 
   if(state.view==="settings"){
     document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ state.settingsTab=b.dataset.tab; render(); });
     const ss=document.getElementById("s-save");
-    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.materialMarkup=num("s-markup"); s.labourRate=num("s-labour"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
+    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q"; s.materialMarkup=num("s-markup"); s.labourRate=num("s-labour"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
     const ps=document.getElementById("p-save");
     if(ps) ps.onclick=()=>{ document.querySelectorAll("[data-price]").forEach(inp=>{ const c=CATALOGUE.find(x=>x.id===inp.dataset.price); if(c) c.cost=parseFloat(inp.value)||0; }); flash("Prices saved"); };
   }
