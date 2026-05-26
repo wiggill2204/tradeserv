@@ -441,6 +441,17 @@ function viewCapture(){
     </div>`).join("");
   const emptyState=(j.sections&&j.sections.length)?"":`<div class="empty small">No areas yet. Add one below — e.g. Kitchen, then tap its 🎤 and describe the work.</div>`;
   return topbar(j.client||"Capture","jobs")+`<div class="wrap">
+    <h2 style="margin-top:4px">Client</h2>
+    <div class="card">
+      <label style="margin-top:0">Client name</label>
+      <div class="ip"><input id="c-client" value="${esc(j.client||"")}" placeholder="e.g. Mrs Naidoo"/>${fieldMic("c-client")}</div>
+      <label>Site address</label>
+      <div class="ip"><input id="c-address" value="${esc(j.address||"")}" placeholder="e.g. 12 Oak Road, Gqeberha"/>${fieldMic("c-address")}</div>
+      <label>Email (for sending)</label>
+      <div class="ip"><input id="c-email" type="email" value="${esc(j.email||"")}" placeholder="client@email.com"/>${fieldMic("c-email")}</div>
+      <label>Mobile (for WhatsApp)</label>
+      <div class="ip"><input id="c-phone" type="tel" value="${esc(j.phone||"")}" placeholder="082 123 4567"/>${fieldMic("c-phone")}</div>
+    </div>
     <div class="note">Split the job into areas. Tap an area's 🎤 and describe the work out loud — the “Talk” button up top adds to the area you're busy with.</div>
     <h2 style="margin-top:6px">Job areas</h2>
     ${secs}${emptyState}
@@ -487,6 +498,13 @@ function viewQuote(){
     : `<div class="empty small">The sample AI didn't spot any items. Go back, add an area and describe the work (or use the sample job).</div>`;
 
   return topbar("Review Quote","capture")+`<div class="wrap">
+    <div class="card" style="display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:12px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700">${esc(j.client||"Unnamed client")}</div>
+        <div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(j.address||"No address")}${j.phone?" · "+esc(j.phone):""}</div>
+      </div>
+      <button class="btn ghost sm" data-go="capture">✎ Edit</button>
+    </div>
     <div class="note">Draft built from your words, grouped by area. Tap “🎤 change” on an area or “Talk” up top — say “add two plug points”, “remove the downlights”, “change cable to 20 metres”.</div>
     ${body}
     <button class="btn ghost sm" id="voice-edit" style="width:100%;margin-top:12px">🎤 Add or change by voice</button>
@@ -618,6 +636,9 @@ function bind(){
 
   if(state.view==="capture"){
     const j=currentJob();
+    const cmap={"c-client":"client","c-address":"address","c-email":"email","c-phone":"phone"};
+    Object.keys(cmap).forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=()=>{ j[cmap[id]]=el.value; save(); if(id==="c-client"){ const h=document.querySelector(".topbar h1"); if(h) h.textContent=el.value||"Capture"; } }; });
+    document.querySelectorAll("[data-fieldmic]").forEach(b=>{ const id=b.dataset.fieldmic; if(cmap[id]) b.onclick=()=>dictateInto(id,(v)=>{ j[cmap[id]]=v.trim(); save(); }); });
     document.querySelectorAll("[data-sectext]").forEach(ta=>{
       ta.onfocus=()=>{ state.activeSec=ta.dataset.sectext; };
       ta.oninput=()=>{ const sec=j.sections.find(s=>s.id===ta.dataset.sectext); if(sec){ sec.text=ta.value; save(); } };
