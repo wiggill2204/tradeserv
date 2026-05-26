@@ -151,7 +151,7 @@ const DEFAULT_SETTINGS = {
   materialMarkup: 25, labourRate: 350, travelFee: 250, vat: 15
 };
 
-const CATALOGUE = [
+const SEED_CATALOGUE = [
   {id:"db18",  name:"Distribution board (18-way)", unit:"ea", cost:1450, labourHrs:2.5, kw:["distribution board","db board","consumer unit","db box","new board"," db "]},
   {id:"cb20",  name:"Circuit breaker 20A",         unit:"ea", cost:85,   labourHrs:0.3, kw:["20 amp","20amp","twenty amp","20 a circuit","20a circuit","20a breaker"]},
   {id:"cb16",  name:"Circuit breaker 16A",         unit:"ea", cost:80,   labourHrs:0.3, kw:["16 amp","16amp","sixteen amp","16a"]},
@@ -180,12 +180,13 @@ let state = { view:"jobs", jobId:null, settingsTab:"markups", activeSec:null, se
 let data = load();
 let lastFocusId = null;
 
+function cloneSeed(){ return JSON.parse(JSON.stringify(SEED_CATALOGUE)); }
 function load(){
   try{
     const raw = localStorage.getItem("tradeserv");
-    if(raw){ const d=JSON.parse(raw); d.settings={...DEFAULT_SETTINGS, ...(d.settings||{})}; if(!d.jobs) d.jobs=[]; d.seq=Math.max(d.seq||0, ...d.jobs.map(j=>j.number||0), 0); return d; }
+    if(raw){ const d=JSON.parse(raw); d.settings={...DEFAULT_SETTINGS, ...(d.settings||{})}; if(!d.jobs) d.jobs=[]; d.seq=Math.max(d.seq||0, ...d.jobs.map(j=>j.number||0), 0); if(!d.catalogue||!d.catalogue.length) d.catalogue=cloneSeed(); return d; }
   }catch(e){}
-  return { settings:{...DEFAULT_SETTINGS}, jobs:[] };
+  return { settings:{...DEFAULT_SETTINGS}, jobs:[], catalogue:cloneSeed() };
 }
 function save(){ try{ localStorage.setItem("tradeserv", JSON.stringify(data)); }catch(e){} }
 function go(view, jobId){ state.view=view; if(jobId!==undefined) state.jobId=jobId; render(); window.scrollTo(0,0); }
@@ -230,7 +231,7 @@ function numAfterTo(text){ const m=text.match(new RegExp("\\bto\\b\\s+(\\d+|"+NU
 function parseText(raw){
   const t=(" "+(raw||"").toLowerCase()+" ").replace(/\s+/g," ");
   const items=[]; const used=new Set();
-  for(const c of CATALOGUE){
+  for(const c of data.catalogue){
     let hit=false, qty=1, phrase=null;
     for(const p of c.kw){ if(t.includes(p)){ hit=true; phrase=p; const q=qtyBefore(t,p); if(q!=null) qty=q; break; } }
     if(!hit) continue;
@@ -269,8 +270,8 @@ function lineSell(li){ return li.cost*(1+data.settings.materialMarkup/100); }
 const ALIAS={cable:"c25", wire:"c25", breaker:"cb20", board:"db18", plug:"dbl", socket:"dbl"};
 function findItem(text){
   const t=(" "+text.toLowerCase()+" ").replace(/\s+/g," ");
-  for(const c of CATALOGUE){ for(const p of c.kw){ if(t.includes(p)) return c; } }
-  for(const k in ALIAS){ if(t.includes(" "+k)) return CATALOGUE.find(c=>c.id===ALIAS[k]); }
+  for(const c of data.catalogue){ for(const p of (c.kw||[])){ if(t.includes(p)) return c; } }
+  for(const k in ALIAS){ if(t.includes(" "+k)) return data.catalogue.find(c=>c.id===ALIAS[k]); }
   return null;
 }
 function detectSection(job, text){
@@ -409,6 +410,68 @@ async function sendQuote(job, channel, includePhotos){
   finishSend(job, channel);
 }
 function finishSend(job, channel){ job.status="sent"; job.sentVia=(channel==="whatsapp"?"WhatsApp":"Email"); save(); setTimeout(()=>go("sent", job.id), 350); }
+
+/* ---------------- SUPPLIER PRICE IMPORT ---------------- */
+const SAMPLE_INVOICE =
+"ACME Electrical Wholesalers - Tax Invoice\n"+
+"Item, Price\n"+
+"Distribution board 18-way, 1520.00\n"+
+"Earth leakage unit 63A, 445.00\n"+
+"Circuit breaker 20A, 92.50\n"+
+"LED downlight, 88.00\n"+
+"Cable 2.5mm per metre, 21.50\n"+
+"Surge protection device (Type 2), 380.00\n"+
+"Inverter 5kW hybrid, 18500.00\n"+
+"Solar panel 550W mono, 2450.00\n";
+
+function toNum(s){
+  s=String(s).replace(/[Rr]/g,"").trim();
+  if(/,\d{1,2}$/.test(s) && !/\.\d/.test(s)){ s=s.replace(/[\s.]/g,"").replace(",","."); }
+  else { s=s.replace(/[\s,]/g,""); }
+  return parseFloat(s)||0;
+}
+function parsePriceLines(text){
+  const out=[];
+  String(text||"").split(/\r?\n/).forEach(raw=>{
+    const line=raw.trim(); if(!line) return;
+    if(/^(item|description|product|name|qty|code)\b/i.test(line) && !/\d/.test(line.replace(/^[^,;\t]*/,""))) return; // header row
+    const nums=line.match(/\d[\d\s.,]*\d|\d/g); if(!nums) return;
+    const priceTok=nums[nums.length-1];
+    const idx=line.lastIndexOf(priceTok);
+    let name=line.slice(0,idx).replace(/[Rr]\s*$/,"").replace(/[\s,;:|\t\-]+$/,"").replace(/\s{2,}/g," ").trim();
+    if(!name || name.length<2) return;
+    const price=toNum(priceTok); if(!price) return;
+    const unit=/per\s*m\b|\/m\b|per\s*met/i.test(line)?"m":"ea";
+    out.push({name, price, unit});
+  });
+  return out;
+}
+function matchCatItem(name){
+  const t=" "+name.toLowerCase()+" ";
+  for(const c of data.catalogue){ for(const p of (c.kw||[])){ if(t.includes(p)) return c; } }
+  for(const c of data.catalogue){ const w=c.name.toLowerCase().split(/[^a-z0-9]+/).filter(x=>x.length>3); if(w.length && w.every(x=>t.includes(x))) return c; }
+  for(const c of data.catalogue){ const w=c.name.toLowerCase().split(/[^a-z0-9]+/).filter(x=>x.length>4); if(w.some(x=>t.includes(x))) return c; }
+  return null;
+}
+function buildProposals(parsed){
+  return parsed.map(p=>{
+    const m=matchCatItem(p.name);
+    let status="new", oldCost=null;
+    if(m){ oldCost=m.cost; status=Math.abs(m.cost-p.price)<0.005?"same":"change"; }
+    return { name:p.name, price:p.price, unit:p.unit||"ea", matchId:m?m.id:null, matchName:m?m.name:null, oldCost, status, approved: status!=="same" };
+  });
+}
+function applyProposals(){
+  let updated=0, added=0;
+  (state.proposals||[]).forEach(p=>{
+    if(!p.approved || p.status==="same") return;
+    if(p.matchId){ const c=data.catalogue.find(x=>x.id===p.matchId); if(c){ c.cost=p.price; c.updated=Date.now(); updated++; } }
+    else { data.catalogue.push({ id:"sup"+uid(), name:p.name, unit:p.unit||"ea", cost:p.price, labourHrs:0.5, kw:[p.name.toLowerCase()], supplier:(state.supplierName||""), updated:Date.now() }); added++; }
+  });
+  save(); state.proposals=null;
+  flash("Updated "+updated+" price"+(updated===1?"":"s")+" · added "+added+" new item"+(added===1?"":"s"));
+  state.settingsTab="prices"; render();
+}
 
 /* ---------------- VOICE ENGINE ---------------- */
 let recog=null, listenState=null;
@@ -684,8 +747,9 @@ function viewSent(){
 function viewSettings(){
   const s=data.settings, tab=state.settingsTab;
   const seg=`<div class="seg">
-    <button data-tab="markups" class="${tab==="markups"?"on":""}">Markups & rates</button>
-    <button data-tab="prices" class="${tab==="prices"?"on":""}">Price list</button></div>`;
+    <button data-tab="markups" class="${tab==="markups"?"on":""}">Rates</button>
+    <button data-tab="prices" class="${tab==="prices"?"on":""}">Price list</button>
+    <button data-tab="import" class="${tab==="import"?"on":""}">Import</button></div>`;
   let body;
   if(tab==="markups"){
     body=`<div class="card">
@@ -701,11 +765,45 @@ function viewSettings(){
       <label>Default travel fee (R)</label><input id="s-travel" type="number" value="${s.travelFee}"/>
       <label>VAT (%)</label><input id="s-vat" type="number" value="${s.vat}"/>
       <button class="btn primary" id="s-save">Save settings</button></div>`;
-  } else {
-    body=`<div class="card"><div class="hint" style="margin-bottom:8px">Prices you pay (excl. markup). In the full app these import from Sage or a supplier list.</div>
-      ${CATALOGUE.map(c=>`<div class="pricerow"><div class="nm">${esc(c.name)}<div class="muted" style="font-size:12px">per ${c.unit} · ${c.labourHrs} hr install</div></div>
-        <div class="pin"><input type="number" data-price="${c.id}" value="${c.cost}"/></div></div>`).join("")}
+  } else if(tab==="prices"){
+    body=`<div class="card"><div class="hint" style="margin-bottom:8px">Prices you pay (excl. markup), ${data.catalogue.length} items. Edit a price, or use <b>Import</b> to update from a supplier. These now save and stick.</div>
+      ${data.catalogue.map(c=>`<div class="pricerow"><div class="nm">${esc(c.name)}<div class="muted" style="font-size:12px">per ${esc(c.unit)} · ${c.labourHrs} hr install${c.updated?` · upd ${esc(dateStr(c.updated))}`:""}</div></div>
+        <div class="pin"><input type="number" data-price="${c.id}" value="${c.cost}"/></div>
+        <button class="sec-del" data-pricedel="${c.id}" title="Remove">✕</button></div>`).join("")}
       <button class="btn primary" id="p-save">Save prices</button></div>`;
+  } else {
+    // IMPORT tab
+    if(state.proposals){
+      const ups=state.proposals.filter(p=>p.status==="change").length;
+      const news=state.proposals.filter(p=>p.status==="new").length;
+      const rows=state.proposals.map((p,i)=>{
+        let sub;
+        if(p.status==="new") sub=`<span style="color:var(--green);font-weight:700">NEW</span> · add at ${randsPdf(p.price)}/${esc(p.unit)}`;
+        else if(p.status==="change") sub=`Update: <span class="muted">${randsPdf(p.oldCost)}</span> → <b style="color:${p.price>p.oldCost?'var(--red)':'var(--green)'}">${randsPdf(p.price)}</b>`;
+        else sub=`No change (${randsPdf(p.price)})`;
+        return `<div class="pricerow">
+          <label style="flex:1;display:flex;gap:9px;align-items:flex-start;margin:0">
+            <input type="checkbox" data-prop="${i}" ${p.approved?"checked":""} ${p.status==="same"?"disabled":""} style="width:auto;margin:3px 0 0"/>
+            <span><b>${esc(p.name)}</b><div class="muted" style="font-size:12px">${sub}${p.matchName&&p.status!=="new"?" · "+esc(p.matchName):""}</div></span>
+          </label></div>`;
+      }).join("");
+      body=`<div class="card">
+        <div class="hint" style="margin-bottom:6px">Found <b>${state.proposals.length}</b> items — ${ups} price change${ups===1?"":"s"}, ${news} new. Tick what to accept.</div>
+        ${rows}
+        <button class="btn primary" id="prop-apply">✓ Apply approved changes</button>
+        <button class="btn ghost sm" id="prop-cancel" style="width:100%">Cancel</button></div>`;
+    } else {
+      body=`<div class="card">
+        <div class="hint">Update your prices from a supplier. Upload a <b>spreadsheet/CSV</b> (parsed for real) or a <b>photo/PDF invoice</b> (reading those is the AI step — shows a sample for now). Then approve the changes.</div>
+        <label>Supplier name (optional)</label><input id="sup-name" value="${esc(state.supplierName||"")}" placeholder="e.g. ACME Wholesalers"/>
+        <label>Upload supplier file</label>
+        <input type="file" id="sup-file" accept=".csv,.txt,text/csv,text/plain,image/*,application/pdf"/>
+        <button class="btn amber" id="sup-sample" style="margin-top:12px">⚡ Try a sample supplier invoice</button>
+        <label style="margin-top:16px">…or paste price lines</label>
+        <textarea id="sup-paste" placeholder="Double socket, 72.50&#10;LED downlight, 88.00&#10;Surge protector, 380.00"></textarea>
+        <button class="btn primary" id="sup-read">Read prices →</button>
+      </div>`;
+    }
   }
   return topbar("Settings","jobs")+`<div class="wrap">${seg}${body}</div>`;
 }
@@ -814,7 +912,23 @@ function bind(){
     const ss=document.getElementById("s-save");
     if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q"; s.materialMarkup=num("s-markup"); s.labourRate=num("s-labour"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
     const ps=document.getElementById("p-save");
-    if(ps) ps.onclick=()=>{ document.querySelectorAll("[data-price]").forEach(inp=>{ const c=CATALOGUE.find(x=>x.id===inp.dataset.price); if(c) c.cost=parseFloat(inp.value)||0; }); flash("Prices saved"); };
+    if(ps) ps.onclick=()=>{ document.querySelectorAll("[data-price]").forEach(inp=>{ const c=data.catalogue.find(x=>x.id===inp.dataset.price); if(c) c.cost=parseFloat(inp.value)||0; }); save(); flash("Prices saved"); };
+    document.querySelectorAll("[data-pricedel]").forEach(b=>b.onclick=()=>{ if(confirm("Remove this item from the price list?")){ data.catalogue=data.catalogue.filter(c=>c.id!==b.dataset.pricedel); save(); render(); } });
+
+    // ---- Import tab ----
+    const sn=document.getElementById("sup-name"); if(sn) sn.oninput=()=>{ state.supplierName=sn.value; };
+    function showProposals(text){ const parsed=parsePriceLines(text); if(!parsed.length){ flash("Couldn't find any priced items in that."); return; } state.proposals=buildProposals(parsed); state.settingsTab="import"; render(); }
+    const samp=document.getElementById("sup-sample"); if(samp) samp.onclick=()=>{ state.supplierName=state.supplierName||"ACME Wholesalers"; showProposals(SAMPLE_INVOICE); };
+    const rd=document.getElementById("sup-read"); if(rd) rd.onclick=()=>{ const t=val("sup-paste"); if(!t){ flash("Paste some price lines first, or use the sample."); return; } showProposals(t); };
+    const sf=document.getElementById("sup-file"); if(sf) sf.onchange=(e)=>{
+      const f=e.target.files[0]; if(!f) return;
+      const isText=/\.(csv|txt)$/i.test(f.name) || /text|csv/.test(f.type);
+      if(isText){ const r=new FileReader(); r.onload=()=>showProposals(r.result); r.readAsText(f); }
+      else { flash("Reading photo/PDF invoices is the AI step — showing a sample for now."); state.supplierName=state.supplierName||f.name.replace(/\.[^.]+$/,""); showProposals(SAMPLE_INVOICE); }
+    };
+    document.querySelectorAll("[data-prop]").forEach(cb=>cb.onchange=()=>{ const i=+cb.dataset.prop; if(state.proposals[i]) state.proposals[i].approved=cb.checked; });
+    const pa=document.getElementById("prop-apply"); if(pa) pa.onclick=applyProposals;
+    const pc=document.getElementById("prop-cancel"); if(pc) pc.onclick=()=>{ state.proposals=null; render(); };
   }
 }
 
