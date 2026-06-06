@@ -211,6 +211,7 @@
   .qd-area td{background:#eef2f8;font-weight:800;color:var(--blue);font-size:12px;padding:6px 8px;border-top:1px solid var(--line)}
   .qd-table td{padding:6px 8px;border-bottom:1px solid var(--line);font-size:12px;vertical-align:top}
   .qd-table td .sub{font-size:10.5px;color:var(--muted);font-style:italic}
+  .qd-table td.qd-desc{font-style:italic;color:#4a566e;background:#fafbfd;padding:4px 8px 8px;white-space:pre-wrap;border-bottom:1px solid var(--line)}
   .qd-totwrap{display:flex;justify-content:flex-end}
   .qd-tot{width:62%;min-width:230px}
   .qd-tr{display:flex;justify-content:space-between;font-size:12px;padding:4px 8px;color:#4a566e}
@@ -659,8 +660,15 @@ function ensureJsPDF(){
   return jspdfPromise;
 }
 function quoteGroups(job){
-  const groups=[]; (job.sections||[]).forEach(sec=>{ const its=job.lineItems.filter(li=>li.sectionId===sec.id); if(its.length) groups.push({title:sec.title,items:its}); });
-  const gset=new Set((job.sections||[]).map(x=>x.id)); const extra=job.lineItems.filter(li=>!gset.has(li.sectionId)); if(extra.length) groups.push({title:"Adjustments",items:extra});
+  const groups=[];
+  (job.sections||[]).forEach(sec=>{
+    const its=job.lineItems.filter(li=>li.sectionId===sec.id);
+    const hasText=sec.text && sec.text.trim();
+    if(its.length || hasText) groups.push({title:sec.title||"Area", text:(sec.text||"").trim(), items:its});
+  });
+  const gset=new Set((job.sections||[]).map(x=>x.id));
+  const extra=job.lineItems.filter(li=>!gset.has(li.sectionId));
+  if(extra.length) groups.push({title:"Adjustments", text:"", items:extra});
   return groups;
 }
 const NAVY=[27,44,79], SKY=[52,179,228], GREY=[120,128,143], INK=[35,49,77], LINE=[225,229,238];
@@ -717,6 +725,12 @@ function generatePdfBlob(job){
     if(y>H-120){ doc.addPage(); y=46; tableHead(); }
     setF([238,242,248]); doc.rect(M, y, R-M, 16, "F"); setC(NAVY); doc.setFont("helvetica","bold"); doc.setFontSize(9.5);
     doc.text(g.title, M+6, y+11); y+=16;
+    if(g.text){
+      doc.setFont("helvetica","italic"); doc.setFontSize(9); setC([74,86,110]);
+      const lines=doc.splitTextToSize(g.text, R-M-12);
+      lines.forEach(ln=>{ if(y>H-110){ doc.addPage(); y=46; tableHead(); } doc.text(ln, M+6, y+10); y+=11; });
+      y+=4; setD(LINE); doc.line(M,y,R,y);
+    }
     g.items.forEach(li=>{
       if(y>H-110){ doc.addPage(); y=46; tableHead(); }
       doc.setFont("helvetica","normal"); doc.setFontSize(9.5); setC(INK);
@@ -733,8 +747,8 @@ function generatePdfBlob(job){
   // ----- totals (right box) -----
   const tx0=R-230, lblX=tx0+4, valX=R-4;
   function trow(lbl,val){ doc.setFont("helvetica","normal"); doc.setFontSize(9.5); setC([74,86,110]); doc.text(lbl,lblX,y); doc.text(val,valX,y,{align:"right"}); y+=15; }
-  trow(tx.materials+" ("+fillTpl(tx.inclMarkup,{p:t.matMk})+")", randsPdf(t.matSell));
-  trow(tx.labour+" ("+(Math.round(t.hours*10)/10)+" "+tx.hrs+" @ "+randsPdf(t.hours?t.labSell/t.hours:0)+")", randsPdf(t.labSell));
+  trow(tx.materials, randsPdf(t.matSell));
+  trow(tx.labour, randsPdf(t.labSell));
   trow(tx.travel, randsPdf(t.travel));
   trow(tx.subtotal, randsPdf(t.sub));
   trow(tx.vat+" @ "+s.vat+"%", randsPdf(t.vat));
@@ -1072,8 +1086,7 @@ function viewCapture(){
     <div class="note">Split the job into areas. Tap an area's 🎤 and describe the work out loud — the “Talk” button up top adds to the area you're busy with.</div>
     <h2 style="margin-top:6px">Job areas</h2>
     ${secs}${emptyState}
-    <div class="chips">${SECTION_CHIPS.map(c=>`<button class="chip" data-chip="${esc(c)}">+ ${esc(c)}</button>`).join("")}
-      <button class="chip" data-chip="">+ Custom</button></div>
+    <button class="btn ghost sm" id="add-area" style="width:100%;margin-top:6px">＋ Add area</button>
     <h2 style="margin-top:18px">Team & time</h2>
     <div class="card">${teamCardHTML(j)}</div>
     <div class="card" style="margin-top:12px">
@@ -1168,6 +1181,7 @@ function quoteDocHTML(job){
   const brand = s.logo ? `<img class="qd-logo" src="${s.logo}"/>` : `<div class="qd-badge">AC</div>`;
   const rows = quoteGroups(job).map(g=>
     `<tr class="qd-area"><td colspan="4">${esc(g.title)}</td></tr>`+
+    (g.text?`<tr><td colspan="4" class="qd-desc">${esc(g.text)}</td></tr>`:"")+
     g.items.map(li=>`<tr><td>${esc(li.name)}</td><td class="c">${li.qty}</td><td class="r">${rands(lineSell(li,job))}</td><td class="r">${rands(lineSell(li,job)*li.qty)}</td></tr>`).join("")
   ).join("");
   const fromLines=[ s.vatNo?(tx.vatNo+": "+esc(s.vatNo)):"", esc(s.address||""), [s.phone,s.email].filter(Boolean).map(esc).join(" · ") ]
@@ -1189,8 +1203,8 @@ function quoteDocHTML(job){
       <tbody>${rows}</tbody>
     </table>
     <div class="qd-totwrap"><div class="qd-tot">
-      <div class="qd-tr"><span>${esc(tx.materials)} (${esc(fillTpl(tx.inclMarkup,{p:t.matMk}))})</span><span>${rands(t.matSell)}</span></div>
-      <div class="qd-tr"><span>${esc(tx.labour)} (${Math.round(t.hours*10)/10} ${esc(tx.hrs)} @ ${rands(t.hours?t.labSell/t.hours:0)})</span><span>${rands(t.labSell)}</span></div>
+      <div class="qd-tr"><span>${esc(tx.materials)}</span><span>${rands(t.matSell)}</span></div>
+      <div class="qd-tr"><span>${esc(tx.labour)}</span><span>${rands(t.labSell)}</span></div>
       <div class="qd-tr"><span>${esc(tx.travel)}</span><span>${rands(t.travel)}</span></div>
       <div class="qd-tr"><span>${esc(tx.subtotal)}</span><span>${rands(t.sub)}</span></div>
       <div class="qd-tr"><span>${esc(tx.vat)} @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
@@ -1409,10 +1423,10 @@ function bind(){
         onFinal:(t)=>{ sec.text=(base+t).trim(); save(); render(); } });
     });
     document.querySelectorAll("[data-secdel]").forEach(b=>b.onclick=()=>{ j.sections=j.sections.filter(s=>s.id!==b.dataset.secdel); save(); render(); });
-    document.querySelectorAll("[data-chip]").forEach(b=>b.onclick=()=>{
-      let title=b.dataset.chip; if(title==="") title=prompt("Area name:","")||""; if(title==="" && b.dataset.chip==="") return;
-      j.sections=j.sections||[]; const sec={id:uid(),title:title||"Area",text:""}; j.sections.push(sec); state.activeSec=sec.id; save(); render();
-    });
+    const addAreaBtn=document.getElementById("add-area"); if(addAreaBtn) addAreaBtn.onclick=()=>{
+      j.sections=j.sections||[]; const sec={id:uid(),title:"",text:""}; j.sections.push(sec); state.activeSec=sec.id; save(); render();
+      setTimeout(()=>{ const inp=document.querySelector('[data-sectitle="'+sec.id+'"]'); if(inp){ inp.focus(); inp.placeholder="Name this area (e.g. Outside)"; } }, 40);
+    };
     document.getElementById("demo-fill").onclick=()=>{ j.sections=DEMO_SECTIONS.map(s=>({id:uid(),title:s.title,text:s.text})); save(); render(); };
     bindTeam(j);
     const ph=document.getElementById("f-photo");
