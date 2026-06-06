@@ -104,6 +104,8 @@
   .totrow{display:flex; justify-content:space-between; padding:7px 0; font-size:15px}
   .totrow.big{font-size:21px; font-weight:800; border-top:2px solid var(--ink); margin-top:8px; padding-top:12px}
   .totrow .lbl{color:var(--muted)}
+  .totrow .prof{color:var(--green);font-weight:700}
+  .mkpct{width:48px;padding:4px 6px;font-size:13px;font-weight:700;text-align:center;color:var(--blue);border-color:var(--amber);border-width:1.5px;margin:0 2px;display:inline-block;height:auto}
   .doc-head{text-align:center; padding:6px 0 14px; border-bottom:2px solid var(--blue); margin-bottom:6px}
   .doc-head .co{font-size:20px;font-weight:800;color:var(--blue)}
   .doc-head .tag{font-size:12px;color:var(--amber-dark);font-style:italic;margin-top:2px}
@@ -224,7 +226,7 @@ const DEFAULT_SETTINGS = {
   logo: "", logoRatio: 0,
   quotePrefix: "Q",
   spokenLang: "en-ZA",
-  materialMarkup: 25, labourRate: 350, travelFee: 250, vat: 15
+  materialMarkup: 25, labourCost: 200, labourMarkup: 75, travelFee: 250, vat: 15
 };
 
 const SEED_CATALOGUE = [
@@ -369,23 +371,46 @@ function buildQuote(job){
   save();
 }
 
+function matMkPct(job){ return job&&job.matMarkup!=null ? job.matMarkup : data.settings.materialMarkup; }
+function labMkPct(job){ return job&&job.labMarkup!=null ? job.labMarkup : data.settings.labourMarkup; }
 function totals(job){
-  const s=data.settings, mk=1+(s.materialMarkup/100);
-  let matSell=0, hours=0;
-  (job.lineItems||[]).forEach(li=>{ matSell+=li.cost*mk*li.qty; hours+=li.labourHrs*li.qty; });
-  const labour=hours*s.labourRate;
+  const s=data.settings;
+  const mPct=matMkPct(job), lPct=labMkPct(job);
+  // materials
+  let matCost=0, estHours=0;
+  (job.lineItems||[]).forEach(li=>{ matCost+=li.cost*li.qty; estHours+=li.labourHrs*li.qty; });
+  const matMarkupAmt = matCost * (mPct/100);
+  const matSell = matCost + matMarkupAmt;
+  // labour: use team cost if assigned, else estimated hours × labourCost
+  const teamHours=(job.team||[]).reduce((a,t)=>a+(t.hours||0),0);
+  const teamCost=(job.team||[]).reduce((a,t)=>{ const p=staffById(t.staffId); return a+(t.hours||0)*((p&&p.rate)||0); },0);
+  const usingTeam = teamHours>0;
+  const hours = usingTeam ? teamHours : estHours;
+  const labCost = usingTeam ? teamCost : estHours*(s.labourCost||0);
+  const labMarkupAmt = labCost * (lPct/100);
+  const labSell = labCost + labMarkupAmt;
+  // travel & totals
   const travel=job.travel!=null?job.travel:s.travelFee;
-  const sub=matSell+labour+travel, vat=sub*(s.vat/100);
-  return { matSell, hours, labour, travel, sub, vat, total:sub+vat };
+  const sub=matSell+labSell+travel, vat=sub*(s.vat/100);
+  return { matCost, matMarkupAmt, matSell, matMk:mPct,
+    hours, labCost, labMarkupAmt, labSell, labMk:lPct, usingTeam,
+    travel, sub, vat, total:sub+vat,
+    // legacy alias
+    labour: labSell };
 }
-function lineSell(li){ return li.cost*(1+data.settings.materialMarkup/100); }
+function lineSell(li, job){ return li.cost*(1+ matMkPct(job)/100); }
 function staffById(id){ return data.staff.find(p=>p.id===id); }
 function costToCompany(job){
+  const s=data.settings;
   const mat=(job.lineItems||[]).reduce((a,li)=>a+li.cost*li.qty, 0);
-  let hours=0, labour=0;
-  (job.team||[]).forEach(t=>{ const p=staffById(t.staffId); if(p){ hours+=(t.hours||0); labour+=(t.hours||0)*(p.rate||0); } });
-  const travel=job.travel!=null?job.travel:data.settings.travelFee;
-  return { mat, hours, labour, travel, total: mat+labour+travel };
+  const estHours=(job.lineItems||[]).reduce((a,li)=>a+li.labourHrs*li.qty, 0);
+  let teamHours=0, teamLabour=0;
+  (job.team||[]).forEach(t=>{ const p=staffById(t.staffId); if(p){ teamHours+=(t.hours||0); teamLabour+=(t.hours||0)*(p.rate||0); } });
+  const usingTeam = teamHours>0;
+  const hours = usingTeam ? teamHours : estHours;
+  const labour = usingTeam ? teamLabour : estHours*(s.labourCost||0);
+  const travel=job.travel!=null?job.travel:s.travelFee;
+  return { mat, hours, labour, travel, total: mat+labour+travel, usingTeam };
 }
 
 /* ---------------- VOICE COMMAND PARSING ---------------- */
@@ -521,8 +546,8 @@ function generatePdfBlob(job){
       doc.setFont("helvetica","normal"); doc.setFontSize(9.5); setC(INK);
       doc.text(li.name, M+6, y+12);
       doc.text(String(li.qty), cQty, y+12, {align:"center"});
-      doc.text(randsPdf(lineSell(li)), cUnit, y+12, {align:"right"});
-      doc.text(randsPdf(lineSell(li)*li.qty), cTot-4, y+12, {align:"right"});
+      doc.text(randsPdf(lineSell(li,job)), cUnit, y+12, {align:"right"});
+      doc.text(randsPdf(lineSell(li,job)*li.qty), cTot-4, y+12, {align:"right"});
       y+=17; setD(LINE); doc.line(M,y,R,y);
     });
   });
@@ -532,8 +557,8 @@ function generatePdfBlob(job){
   // ----- totals (right box) -----
   const tx0=R-230, lblX=tx0+4, valX=R-4;
   function trow(lbl,val){ doc.setFont("helvetica","normal"); doc.setFontSize(9.5); setC([74,86,110]); doc.text(lbl,lblX,y); doc.text(val,valX,y,{align:"right"}); y+=15; }
-  trow(tx.materials+" ("+fillTpl(tx.inclMarkup,{p:s.materialMarkup})+")", randsPdf(t.matSell));
-  trow(tx.labour+" ("+(Math.round(t.hours*10)/10)+" "+tx.hrs+" @ "+randsPdf(s.labourRate)+")", randsPdf(t.labour));
+  trow(tx.materials+" ("+fillTpl(tx.inclMarkup,{p:t.matMk})+")", randsPdf(t.matSell));
+  trow(tx.labour+" ("+(Math.round(t.hours*10)/10)+" "+tx.hrs+" @ "+randsPdf(t.hours?t.labSell/t.hours:0)+")", randsPdf(t.labSell));
   trow(tx.travel, randsPdf(t.travel));
   trow(tx.subtotal, randsPdf(t.sub));
   trow(tx.vat+" @ "+s.vat+"%", randsPdf(t.vat));
@@ -697,7 +722,7 @@ function closeAdd(){
 function showAddOverlay(){
   let ov=document.getElementById("add-ov");
   if(!ov){ ov=document.createElement("div"); ov.id="add-ov"; document.body.appendChild(ov); }
-  const j=currentJob(), s=data.settings, mk=1+(s.materialMarkup/100);
+  const j=currentJob(), s=data.settings, mk=1+(matMkPct(j)/100);
   const cat=[...data.catalogue].sort((a,b)=>a.name.localeCompare(b.name));
   const rows=cat.map(c=>`
     <div class="add-row" data-name="${esc(c.name.toLowerCase())}">
@@ -902,13 +927,14 @@ function viewQuote(){
     const gi=j.lineItems.indexOf(li);
     return `<div class="qline">
       <div class="qty"><input type="number" min="0" step="1" data-qty="${gi}" value="${li.qty}"/></div>
-      <div class="d"><div class="t">${esc(li.name)}</div><div class="s">${rands(lineSell(li))} / ${li.unit}</div></div>
-      <div class="amt">${rands(lineSell(li)*li.qty)}</div>
+      <div class="d"><div class="t">${esc(li.name)}</div><div class="s">${rands(lineSell(li,j))} / ${li.unit}</div></div>
+      <div class="amt">${rands(lineSell(li,j)*li.qty)}</div>
       <button class="del" data-del="${gi}">✕</button></div>`;
   }
   function secBlock(g){
-    let mat=0,hrs=0; g.items.forEach(li=>{mat+=lineSell(li)*li.qty;hrs+=li.labourHrs*li.qty;});
-    const sub=mat+hrs*s.labourRate;
+    let mat=0,hrs=0; g.items.forEach(li=>{mat+=lineSell(li,j)*li.qty;hrs+=li.labourHrs*li.qty;});
+    const billableRate=(s.labourCost||0)*(1+labMkPct(j)/100);
+    const sub=mat+hrs*billableRate;
     return `<div class="qsec-head"><span class="t">${esc(g.title)}</span>
         <button class="m" data-qsecadd="${g.id}">＋ add</button>
         <button class="m" data-qsecmic="${g.id}">🎤 change</button></div>
@@ -933,8 +959,10 @@ function viewQuote(){
       <button class="btn ghost sm" id="voice-edit" style="width:100%">🎤 By voice</button>
     </div>
     <div class="card" style="margin-top:12px">
-      <div class="totrow"><span class="lbl">Materials (incl. ${s.materialMarkup}% markup)</span><span>${rands(t.matSell)}</span></div>
-      <div class="totrow"><span class="lbl">Labour — ${(Math.round(t.hours*10)/10)} hrs @ ${rands(s.labourRate)}</span><span>${rands(t.labour)}</span></div>
+      <div class="totrow"><span class="lbl">Materials cost</span><span>${rands(t.matCost)}</span></div>
+      <div class="totrow"><span class="lbl">Materials markup <input type="number" min="0" step="1" id="mk-mat" value="${t.matMk}" class="mkpct"/> %</span><span class="prof">${rands(t.matMarkupAmt)}</span></div>
+      <div class="totrow"><span class="lbl">Labour cost (${(Math.round(t.hours*10)/10)} ${t.usingTeam?"team hrs":"est. hrs"} @ ${rands(t.hours?t.labCost/t.hours:0)}/hr)</span><span>${rands(t.labCost)}</span></div>
+      <div class="totrow"><span class="lbl">Labour markup <input type="number" min="0" step="1" id="mk-lab" value="${t.labMk}" class="mkpct"/> %</span><span class="prof">${rands(t.labMarkupAmt)}</span></div>
       <div class="totrow"><span class="lbl">Travel <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button></span><span>${rands(t.travel)}</span></div>
       <div class="totrow"><span class="lbl">Subtotal (excl. VAT)</span><span>${rands(t.sub)}</span></div>
       <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
@@ -962,7 +990,7 @@ function quoteDocHTML(job){
   const brand = s.logo ? `<img class="qd-logo" src="${s.logo}"/>` : `<div class="qd-badge">AC</div>`;
   const rows = quoteGroups(job).map(g=>
     `<tr class="qd-area"><td colspan="4">${esc(g.title)}</td></tr>`+
-    g.items.map(li=>`<tr><td>${esc(li.name)}</td><td class="c">${li.qty}</td><td class="r">${rands(lineSell(li))}</td><td class="r">${rands(lineSell(li)*li.qty)}</td></tr>`).join("")
+    g.items.map(li=>`<tr><td>${esc(li.name)}</td><td class="c">${li.qty}</td><td class="r">${rands(lineSell(li,job))}</td><td class="r">${rands(lineSell(li,job)*li.qty)}</td></tr>`).join("")
   ).join("");
   const fromLines=[ s.vatNo?(tx.vatNo+": "+esc(s.vatNo)):"", esc(s.address||""), [s.phone,s.email].filter(Boolean).map(esc).join(" · ") ]
     .filter(Boolean).map(x=>`<div class="ln">${x}</div>`).join("");
@@ -983,8 +1011,8 @@ function quoteDocHTML(job){
       <tbody>${rows}</tbody>
     </table>
     <div class="qd-totwrap"><div class="qd-tot">
-      <div class="qd-tr"><span>${esc(tx.materials)} (${esc(fillTpl(tx.inclMarkup,{p:s.materialMarkup}))})</span><span>${rands(t.matSell)}</span></div>
-      <div class="qd-tr"><span>${esc(tx.labour)} (${Math.round(t.hours*10)/10} ${esc(tx.hrs)} @ ${rands(s.labourRate)})</span><span>${rands(t.labour)}</span></div>
+      <div class="qd-tr"><span>${esc(tx.materials)} (${esc(fillTpl(tx.inclMarkup,{p:t.matMk}))})</span><span>${rands(t.matSell)}</span></div>
+      <div class="qd-tr"><span>${esc(tx.labour)} (${Math.round(t.hours*10)/10} ${esc(tx.hrs)} @ ${rands(t.hours?t.labSell/t.hours:0)})</span><span>${rands(t.labSell)}</span></div>
       <div class="qd-tr"><span>${esc(tx.travel)}</span><span>${rands(t.travel)}</span></div>
       <div class="qd-tr"><span>${esc(tx.subtotal)}</span><span>${rands(t.sub)}</span></div>
       <div class="qd-tr"><span>${esc(tx.vat)} @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
@@ -1029,8 +1057,11 @@ function viewSettings(){
       <label>Bank details (footer of the quote)</label><textarea id="s-bank" style="min-height:64px" placeholder="FNB Business Account\nAcc No: ...\nBranch: ...">${esc(s.bank||"")}</textarea>
       <label>Quote number prefix</label><input id="s-prefix" value="${esc(s.quotePrefix||"Q")}"/>
       <label>Material markup (%)</label><input id="s-markup" type="number" value="${s.materialMarkup}"/>
-      <div class="hint">Added on top of what you pay for materials.</div>
-      <label>Labour rate (R per hour)</label><input id="s-labour" type="number" value="${s.labourRate}"/>
+      <div class="hint">Default markup on materials (you can override per job on the quote).</div>
+      <label>Labour cost (R per hour)</label><input id="s-labour" type="number" value="${s.labourCost}"/>
+      <div class="hint">Default cost-to-company per hour (used when no specific team is assigned).</div>
+      <label>Labour markup (%)</label><input id="s-labourmk" type="number" value="${s.labourMarkup}"/>
+      <div class="hint">Default markup on labour cost (you can override per job on the quote).</div>
       <label>Default travel fee (R)</label><input id="s-travel" type="number" value="${s.travelFee}"/>
       <label>VAT (%)</label><input id="s-vat" type="number" value="${s.vat}"/>
       <label>Your spoken language (for the 🎤 mic)</label>
@@ -1190,6 +1221,8 @@ function bind(){
     const ai=document.getElementById("add-item"); if(ai) ai.onclick=()=>openAdd();
     const ve=document.getElementById("voice-edit"); if(ve) ve.onclick=()=>topbarVoice();
     const et=document.getElementById("edit-travel"); if(et) et.onclick=()=>{ const v=prompt("Travel fee (R):", j.travel!=null?j.travel:data.settings.travelFee); if(v!=null){ j.travel=parseFloat(v)||0; save(); render(); } };
+    const mm=document.getElementById("mk-mat"); if(mm) mm.onchange=()=>{ j.matMarkup=Math.max(0,parseFloat(mm.value)||0); save(); render(); };
+    const lm=document.getElementById("mk-lab"); if(lm) lm.onchange=()=>{ j.labMarkup=Math.max(0,parseFloat(lm.value)||0); save(); render(); };
     ensureJsPDF().catch(()=>{}); // preload so the Share sheet opens within the tap
     const incPhotos=()=>{ const c=document.getElementById("inc-photos"); return c?c.checked:false; };
     document.getElementById("send-wa").onclick=()=>sendQuote(j,"whatsapp",incPhotos());
@@ -1199,7 +1232,7 @@ function bind(){
   if(state.view==="settings"){
     document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ state.settingsTab=b.dataset.tab; render(); });
     const ss=document.getElementById("s-save");
-    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.regName=val("s-regname"); s.address=val("s-address"); s.bank=val("s-bank"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q"; const sp=document.getElementById("s-spoken"); if(sp) s.spokenLang=sp.value; s.materialMarkup=num("s-markup"); s.labourRate=num("s-labour"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
+    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.regName=val("s-regname"); s.address=val("s-address"); s.bank=val("s-bank"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q"; const sp=document.getElementById("s-spoken"); if(sp) s.spokenLang=sp.value; s.materialMarkup=num("s-markup"); s.labourCost=num("s-labour"); s.labourMarkup=num("s-labourmk"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
     const lf=document.getElementById("s-logo");
     if(lf) lf.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ data.settings.logo=r.result; data.settings.logoRatio=img.width/img.height||3; save(); flash("Logo added"); render(); }; img.onerror=()=>{ data.settings.logo=r.result; data.settings.logoRatio=3; save(); render(); }; img.src=r.result; }; r.readAsDataURL(f); };
     const lc=document.getElementById("s-logo-clear"); if(lc) lc.onclick=()=>{ data.settings.logo=""; data.settings.logoRatio=0; save(); render(); };
