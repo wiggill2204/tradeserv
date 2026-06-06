@@ -519,6 +519,24 @@ async function geocode(address){
   }
   return null;
 }
+async function reverseGeocode(lat, lng){
+  try{
+    const url=`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${lat}&lon=${lng}`;
+    const r=await fetch(url, {headers:{'Accept':'application/json'}});
+    if(!r.ok) return null;
+    const j=await r.json(); if(!j) return null;
+    const a=j.address||{};
+    const street=[a.house_number, a.road||a.pedestrian||a.path].filter(Boolean).join(" ");
+    const suburb=a.suburb||a.neighbourhood||a.hamlet;
+    const city=a.city||a.town||a.village||a.municipality;
+    const parts=[];
+    if(street) parts.push(street);
+    if(suburb) parts.push(suburb);
+    if(city && city!==suburb) parts.push(city);
+    if(a.postcode) parts.push(a.postcode);
+    return parts.length ? parts.join(", ") : (j.display_name||null);
+  }catch(e){ return null; }
+}
 async function routeKm(from, to){
   if(!from || !to) return null;
   try{
@@ -1349,14 +1367,16 @@ function bind(){
       onPick:async (p)=>{
         j.lat=p.lat; j.lng=p.lng;
         j.locatedAs=`Pinned on map (${p.lat.toFixed(5)}, ${p.lng.toFixed(5)})`;
-        j._geocodedAddr=j.address;
-        delete j.travel; save(); flash("Site pinned ✓");
+        delete j.travel; save(); flash("Site pinned · looking up address…");
+        const addr=await reverseGeocode(p.lat, p.lng);
+        if(addr){ j.address=addr; }
+        j._geocodedAddr=j.address; save();
         const s2=data.settings;
         if(s2.businessLat!=null){
-          flash("Calculating distance…");
           const km=await routeKm({lat:s2.businessLat,lng:s2.businessLng},{lat:p.lat,lng:p.lng});
-          if(km!=null){ j.distanceKm=km; save(); flash(`Distance: ${km} km`); }
-        }
+          if(km!=null){ j.distanceKm=km; save(); flash(`Distance: ${km} km`+(addr?" · address updated":"")); }
+          else flash(addr?"Address updated":"Site pinned");
+        } else { flash(addr?"Address updated":"Site pinned"); }
         render();
       }
     });
@@ -1405,14 +1425,15 @@ function bind(){
       onPick:async (p)=>{
         j.lat=p.lat; j.lng=p.lng;
         j.locatedAs=`Pinned on map (${p.lat.toFixed(5)}, ${p.lng.toFixed(5)})`;
-        j._geocodedAddr=j.address;
-        delete j.travel; save(); flash("Site pinned ✓");
+        delete j.travel; save(); flash("Site pinned · looking up address…");
+        const addr=await reverseGeocode(p.lat, p.lng);
+        if(addr){ j.address=addr; }
+        j._geocodedAddr=j.address; save();
         const s2=data.settings;
-        if(s2.businessLat==null){ flash("Now pin your business location in Settings to compute distance."); render(); return; }
-        flash("Calculating distance…");
+        if(s2.businessLat==null){ flash("Now pin your business location in Settings."); render(); return; }
         const km=await routeKm({lat:s2.businessLat,lng:s2.businessLng},{lat:p.lat,lng:p.lng});
-        if(km!=null){ j.distanceKm=km; save(); flash(`Distance: ${km} km`); }
-        else { flash("Couldn't calculate driving distance."); }
+        if(km!=null){ j.distanceKm=km; save(); flash(`Distance: ${km} km`+(addr?" · address updated":"")); }
+        else { flash(addr?"Address updated":"Couldn't calculate driving distance."); }
         render();
       }
     });
@@ -1445,10 +1466,14 @@ function bind(){
     if(pm) pm.onclick=()=>openMapPicker({
       title:"Pin your business location",
       initialLat:data.settings.businessLat, initialLng:data.settings.businessLng,
-      onPick:(p)=>{
+      onPick:async (p)=>{
         data.settings.businessLat=p.lat; data.settings.businessLng=p.lng;
         data.settings.businessLocatedAs=`Pinned on map (${p.lat.toFixed(5)}, ${p.lng.toFixed(5)})`;
-        save(); flash("Business pinned ✓"); render();
+        save(); flash("Business pinned · looking up address…");
+        const addr=await reverseGeocode(p.lat, p.lng);
+        if(addr){ data.settings.address=addr; save(); flash("Business pinned · address updated"); }
+        else { flash("Business pinned ✓"); }
+        render();
       }
     });
     const lf=document.getElementById("s-logo");
