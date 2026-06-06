@@ -325,6 +325,60 @@ function normalize(job){
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function rands(n){ return "R" + (Math.round(n*100)/100).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+/* Tidy a raw voice/typed scope-of-work description into a professional bulleted list. Heuristic — the AI step will do this beautifully later. */
+function tidyScopeText(raw){
+  if(!raw || !raw.trim()) return [];
+  let s=raw.trim().replace(/\s+/g," ").replace(/^[\.,;:\s]+|[\.,;:\s]+$/g,"");
+  // Normalise common product/term casing
+  const fixes=[
+    [/\bcenturion\b/gi,"Centurion"], [/\bevo\b/gi,"Evo"], [/\bsmart\b/gi,"Smart"],
+    [/\bdc\b/gi,"DC"], [/\bac\b/gi,"AC"], [/\bled\b/gi,"LED"], [/\bpvc\b/gi,"PVC"], [/\bvat\b/gi,"VAT"],
+    [/\bd\s*5\b/gi,"D5"], [/\bd\s*10\s*smart\b/gi,"D10 Smart"], [/\bd\s*10\b/gi,"D10"], [/\bd\s*20\b/gi,"D20"],
+    [/\brazz?\s*rack\b/gi,"Razz rack"], [/\brazrack\b/gi,"Razz rack"],
+    [/\binstall\s+it\s+(a\s+)?new\b/gi, (m,a)=>"install "+(a?"a ":"")+"new"], // drop the dangling "it"
+    [/\bit's\s+(a\s+)?new\b/gi,(m,a)=>"a "+(a?"":"")+"new"]
+  ];
+  fixes.forEach(f=>{ s=s.replace(f[0],f[1]); });
+  // Action verbs that typically start a new task
+  const verbs=["replace","remove","install","fit","add","wire","connect","commission","test","supply","mount",
+    "check","inspect","repair","service","paint","fix","rewire","clean","route","run","apply","seal","patch",
+    "configure","program","reset","calibrate","verify","isolate","earth","attach","hang","pull","feed","splice","cut","measure","clear"];
+  const verbRe=new RegExp("\\b(" + verbs.join("|") + ")\\b","gi");
+  const positions=[]; let m;
+  while((m=verbRe.exec(s))!==null) positions.push(m.index);
+  let segs=[];
+  if(!positions.length){
+    segs=[s];
+  } else {
+    if(positions[0]>0){ const pre=s.slice(0,positions[0]).trim(); if(pre) segs.push(pre); }
+    for(let i=0;i<positions.length;i++){
+      const start=positions[i], end=(i+1<positions.length)?positions[i+1]:s.length;
+      let seg=s.slice(start,end).trim()
+        .replace(/\s+(and|then|also|plus|after that|next)\s*$/i,"")
+        .replace(/[,;]\s*$/, "")
+        .trim();
+      if(seg) segs.push(seg);
+    }
+  }
+  // Combine very short trailing verbs (e.g. "Test.") with the previous bullet ("…and test.")
+  const out=[];
+  segs.forEach(seg=>{
+    const w=seg.split(/\s+/).filter(Boolean);
+    if(w.length<=2 && out.length){
+      out[out.length-1]=out[out.length-1].replace(/[.!?]\s*$/,"") + " and " + seg.toLowerCase();
+    } else {
+      out.push(seg);
+    }
+  });
+  // Capitalise & end with a period
+  return out.map(seg=>{
+    let s2=seg.replace(/\s+/g," ").trim();
+    s2=s2.charAt(0).toUpperCase()+s2.slice(1);
+    if(!/[.!?]$/.test(s2)) s2+=".";
+    return s2;
+  });
+}
 function randsPdf(n){ return "R"+(Math.round(n*100)/100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
 function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function nextNumber(){ data.seq=(data.seq||0)+1; return data.seq; }
@@ -726,10 +780,15 @@ function generatePdfBlob(job){
     setF([238,242,248]); doc.rect(M, y, R-M, 16, "F"); setC(NAVY); doc.setFont("helvetica","bold"); doc.setFontSize(9.5);
     doc.text(g.title, M+6, y+11); y+=16;
     if(g.text){
-      doc.setFont("helvetica","italic"); doc.setFontSize(9); setC([74,86,110]);
-      const lines=doc.splitTextToSize(g.text, R-M-12);
-      lines.forEach(ln=>{ if(y>H-110){ doc.addPage(); y=46; tableHead(); } doc.text(ln, M+6, y+10); y+=11; });
-      y+=4; setD(LINE); doc.line(M,y,R,y);
+      const bullets=tidyScopeText(g.text);
+      if(bullets.length){
+        doc.setFont("helvetica","italic"); doc.setFontSize(9); setC([74,86,110]);
+        bullets.forEach(b=>{
+          const wrapped=doc.splitTextToSize("• "+b, R-M-12);
+          wrapped.forEach(ln=>{ if(y>H-110){ doc.addPage(); y=46; tableHead(); } doc.text(ln, M+6, y+10); y+=11; });
+        });
+        y+=4; setD(LINE); doc.line(M,y,R,y);
+      }
     }
     g.items.forEach(li=>{
       if(y>H-110){ doc.addPage(); y=46; tableHead(); }
@@ -1265,7 +1324,7 @@ function quoteDocHTML(job){
   const brand = s.logo ? `<img class="qd-logo" src="${s.logo}"/>` : `<div class="qd-badge">AC</div>`;
   const rows = quoteGroups(job).map(g=>
     `<tr class="qd-area"><td colspan="4">${esc(g.title)}</td></tr>`+
-    (g.text?`<tr><td colspan="4" class="qd-desc">${esc(g.text)}</td></tr>`:"")+
+    (g.text?(()=>{ const bullets=tidyScopeText(g.text); if(!bullets.length) return ""; return `<tr><td colspan="4" class="qd-desc">${bullets.map(b=>"• "+esc(b)).join("<br>")}</td></tr>`; })():"")+
     g.items.map(li=>`<tr><td>${esc(li.name)}</td><td class="c">${li.qty}</td><td class="r">${rands(lineSell(li,job))}</td><td class="r">${rands(lineSell(li,job)*li.qty)}</td></tr>`).join("")
   ).join("");
   const fromLines=[ s.vatNo?(tx.vatNo+": "+esc(s.vatNo)):"", esc(s.address||""), [s.phone,s.email].filter(Boolean).map(esc).join(" · ") ]
