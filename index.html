@@ -226,7 +226,7 @@ const DEFAULT_SETTINGS = {
   logo: "", logoRatio: 0,
   quotePrefix: "Q",
   spokenLang: "en-ZA",
-  materialMarkup: 25, labourCost: 200, labourMarkup: 75, travelFee: 250, vat: 15
+  materialMarkup: 25, labourCost: 200, labourMarkup: 75, travelRate: 8, travelFee: 250, vat: 15
 };
 
 const SEED_CATALOGUE = [
@@ -366,7 +366,6 @@ function buildQuote(job){
   });
   job.lineItems=items;
   job.status=items.length?"quoted":"draft";
-  if(job.travel==null) job.travel=data.settings.travelFee;
   if(!job.number) job.number=nextNumber();
   save();
 }
@@ -390,7 +389,7 @@ function totals(job){
   const labMarkupAmt = labCost * (lPct/100);
   const labSell = labCost + labMarkupAmt;
   // travel & totals
-  const travel=job.travel!=null?job.travel:s.travelFee;
+  const travel=travelCost(job);
   const sub=matSell+labSell+travel, vat=sub*(s.vat/100);
   return { matCost, matMarkupAmt, matSell, matMk:mPct,
     hours, labCost, labMarkupAmt, labSell, labMk:lPct, usingTeam,
@@ -422,6 +421,72 @@ function bindTeam(j){
   document.querySelectorAll("[data-teamdel]").forEach(b=>b.onclick=()=>{ j.team=(j.team||[]).filter(t=>t.staffId!==b.dataset.teamdel); save(); render(); });
   const sel=document.getElementById("team-add-select"); if(sel) sel.onchange=()=>{ const id=sel.value; if(!id) return; j.team=j.team||[]; if(!j.team.some(t=>t.staffId===id)){ j.team.push({staffId:id, hours:0}); save(); render(); } };
 }
+/* ---------------- DISTANCE (geocoding + driving km) ---------------- */
+async function geocode(address){
+  if(!address || !address.trim()) return null;
+  const a=address.trim();
+  const tries=[a];
+  const noPc=a.replace(/,?\s*\d{4}\s*$/, "").trim(); // drop trailing postcode
+  if(noPc && noPc!==a) tries.push(noPc);
+  const noNum=noPc.replace(/^\d+\s+/, "").trim(); // drop leading street number
+  if(noNum && !tries.includes(noNum)) tries.push(noNum);
+  const parts=a.split(",").map(s=>s.trim()).filter(Boolean);
+  if(parts.length>1){
+    const suburb=parts.slice(-3).join(", ");
+    if(!tries.includes(suburb)) tries.push(suburb);
+  }
+  for(let i=0;i<tries.length;i++){
+    try{
+      const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=za&q='+encodeURIComponent(tries[i]);
+      const r=await fetch(url, {headers:{'Accept':'application/json'}});
+      if(r.ok){
+        const j=await r.json();
+        if(j && j.length){ return {lat:parseFloat(j[0].lat), lng:parseFloat(j[0].lon), display:j[0].display_name}; }
+      }
+    }catch(e){}
+    if(i<tries.length-1) await new Promise(rs=>setTimeout(rs,1100)); // Nominatim rate limit
+  }
+  return null;
+}
+async function routeKm(from, to){
+  if(!from || !to) return null;
+  try{
+    const url=`https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
+    const r=await fetch(url);
+    if(!r.ok) return null;
+    const j=await r.json();
+    if(j.routes && j.routes[0]) return Math.round(j.routes[0].distance/100)/10; // 1 dp km
+  }catch(e){}
+  return null;
+}
+async function ensureDistance(job){
+  const s=data.settings;
+  // Geocode business address if needed
+  if(s.businessLat==null || s.businessLng==null){
+    if(!s.address) return {error:"Business address not set in Settings."};
+    const g=await geocode(s.address);
+    if(g){ s.businessLat=g.lat; s.businessLng=g.lng; save(); }
+    else return {error:"Couldn't locate the business address."};
+  }
+  // Geocode job site address
+  if(!job.lat || !job.lng || job._geocodedAddr !== job.address){
+    if(!job.address) return {error:"Site address is empty on this job."};
+    const g=await geocode(job.address);
+    if(g){ job.lat=g.lat; job.lng=g.lng; job._geocodedAddr=job.address; save(); }
+    else return {error:"Couldn't locate the site address."};
+  }
+  // Driving distance
+  const km=await routeKm({lat:s.businessLat,lng:s.businessLng}, {lat:job.lat,lng:job.lng});
+  if(km!=null){ job.distanceKm=km; save(); return {km}; }
+  return {error:"Couldn't calculate the driving distance."};
+}
+function travelCost(job){
+  const s=data.settings;
+  if(job.travel!=null) return job.travel; // manual override
+  if(job.distanceKm!=null) return job.distanceKm * 2 * (s.travelRate||0);
+  return 0;
+}
+
 function costToCompany(job){
   const s=data.settings;
   const mat=(job.lineItems||[]).reduce((a,li)=>a+li.cost*li.qty, 0);
@@ -431,7 +496,7 @@ function costToCompany(job){
   const usingTeam = teamHours>0;
   const hours = usingTeam ? teamHours : estHours;
   const labour = usingTeam ? teamLabour : estHours*(s.labourCost||0);
-  const travel=job.travel!=null?job.travel:s.travelFee;
+  const travel=travelCost(job);
   return { mat, hours, labour, travel, total: mat+labour+travel, usingTeam };
 }
 
@@ -982,7 +1047,7 @@ function viewQuote(){
       <div class="totrow"><span class="lbl">Materials markup <input type="number" min="0" step="1" id="mk-mat" value="${t.matMk}" class="mkpct"/> %</span><span class="prof">${rands(t.matMarkupAmt)}</span></div>
       <div class="totrow"><span class="lbl">Labour cost (${(Math.round(t.hours*10)/10)} ${t.usingTeam?"team hrs":"est. hrs"} @ ${rands(t.hours?t.labCost/t.hours:0)}/hr)</span><span>${rands(t.labCost)}</span></div>
       <div class="totrow"><span class="lbl">Labour markup <input type="number" min="0" step="1" id="mk-lab" value="${t.labMk}" class="mkpct"/> %</span><span class="prof">${rands(t.labMarkupAmt)}</span></div>
-      <div class="totrow"><span class="lbl">Travel <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button></span><span>${rands(t.travel)}</span></div>
+      <div class="totrow"><span class="lbl">${(()=>{ if(j.travel!=null) return `Travel (manual) <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button> <button class="del" id="travel-auto" style="color:var(--blue);font-size:13px">use distance</button>`; if(j.distanceKm!=null) return `Travel — ${j.distanceKm} km × ${rands(s.travelRate||0)}/km × 2 <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">↻</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; return `Travel <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">📍 calculate</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; })()}</span><span>${rands(t.travel)}</span></div>
       <div class="totrow"><span class="lbl">Subtotal (excl. VAT)</span><span>${rands(t.sub)}</span></div>
       <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
       <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
@@ -1081,7 +1146,8 @@ function viewSettings(){
       <div class="hint">Default cost-to-company per hour (used when no specific team is assigned).</div>
       <label>Labour markup (%)</label><input id="s-labourmk" type="number" value="${s.labourMarkup}"/>
       <div class="hint">Default markup on labour cost (you can override per job on the quote).</div>
-      <label>Default travel fee (R)</label><input id="s-travel" type="number" value="${s.travelFee}"/>
+      <label>Travel rate (R per km)</label><input id="s-travelrate" type="number" step="0.5" value="${s.travelRate||0}"/>
+      <div class="hint">Charged round trip (×2). Driving distance is calculated from your business address to the job site address.${(s.businessLat!=null)?` <span style="color:var(--green)">· Business located ✓</span>`:` <span style="color:var(--red)">· Business not located yet (set address above and save)</span>`}</div>
       <label>VAT (%)</label><input id="s-vat" type="number" value="${s.vat}"/>
       <label>Your spoken language (for the 🎤 mic)</label>
       <select id="s-spoken">${LANGS.map(l=>`<option value="${l.sr}"${(s.spokenLang||"en-ZA")===l.sr?" selected":""}>${esc(l.name)}</option>`).join("")}</select>
@@ -1173,7 +1239,7 @@ function topbarVoice(){
   if(state.view==="sent"){ startListen({ title:"Say a command", sub:"e.g. “back to jobs”", onFinal:(t)=>{ if(/job|done|back|home/i.test(t)) go("jobs"); } }); }
 }
 // recompute totals/status after a voice edit without wiping voice-added extras
-function buildKeepExtras(job){ job.status=job.lineItems.length?"quoted":"draft"; if(job.travel==null) job.travel=data.settings.travelFee; save(); }
+function buildKeepExtras(job){ job.status=job.lineItems.length?"quoted":"draft"; save(); }
 
 function bind(){
   document.querySelectorAll("[data-go]").forEach(el=>el.onclick=()=>{ stopListen(); go(el.dataset.go); });
@@ -1198,7 +1264,7 @@ function bind(){
   if(state.view==="capture"){
     const j=currentJob();
     const cmap={"c-client":"client","c-address":"address","c-email":"email","c-phone":"phone"};
-    Object.keys(cmap).forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=()=>{ j[cmap[id]]=el.value; save(); if(id==="c-client"){ const h=document.querySelector(".topbar h1"); if(h) h.textContent=el.value||"Capture"; } }; });
+    Object.keys(cmap).forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=()=>{ j[cmap[id]]=el.value; if(id==="c-address"){ delete j.lat; delete j.lng; delete j.distanceKm; delete j._geocodedAddr; delete j._distanceTried; } save(); if(id==="c-client"){ const h=document.querySelector(".topbar h1"); if(h) h.textContent=el.value||"Capture"; } }; });
     document.querySelectorAll("[data-fieldmic]").forEach(b=>{ const id=b.dataset.fieldmic; if(cmap[id]) b.onclick=()=>dictateInto(id,(v)=>{ j[cmap[id]]=v.trim(); save(); }); });
     const cl=document.getElementById("c-lang"); if(cl) cl.onchange=()=>{ j.lang=cl.value; save(); };
     document.querySelectorAll("[data-sectext]").forEach(ta=>{
@@ -1237,7 +1303,11 @@ function bind(){
     document.querySelectorAll("[data-qsecadd]").forEach(b=>b.onclick=()=>openAdd(b.dataset.qsecadd));
     const ai=document.getElementById("add-item"); if(ai) ai.onclick=()=>openAdd();
     const ve=document.getElementById("voice-edit"); if(ve) ve.onclick=()=>topbarVoice();
-    const et=document.getElementById("edit-travel"); if(et) et.onclick=()=>{ const v=prompt("Travel fee (R):", j.travel!=null?j.travel:data.settings.travelFee); if(v!=null){ j.travel=parseFloat(v)||0; save(); render(); } };
+    const et=document.getElementById("edit-travel"); if(et) et.onclick=()=>{ const cur=j.travel!=null?j.travel:travelCost(j); const v=prompt("Travel fee (R) — leave blank for distance-based:", cur); if(v===null) return; if(v===""){ delete j.travel; save(); render(); return; } j.travel=parseFloat(v)||0; save(); render(); };
+    const tc=document.getElementById("travel-calc"); if(tc) tc.onclick=()=>{ delete j.travel; flash("Calculating distance…"); ensureDistance(j).then(r=>{ if(r.km!=null){ flash(`Distance set: ${r.km} km`); } else { flash(r.error||"Couldn't calculate distance."); } render(); }); };
+    const ta=document.getElementById("travel-auto"); if(ta) ta.onclick=()=>{ delete j.travel; save(); render(); if(j.distanceKm==null) document.getElementById("travel-calc")?.click(); };
+    // auto-trigger distance calc on first quote view if business address is set and distance not yet known
+    if(j.address && data.settings.address && j.distanceKm==null && j.travel==null && !j._distanceTried){ j._distanceTried=true; ensureDistance(j).then(r=>{ if(r.km!=null){ render(); } }); }
     const mm=document.getElementById("mk-mat"); if(mm) mm.onchange=()=>{ j.matMarkup=Math.max(0,parseFloat(mm.value)||0); save(); render(); };
     const lm=document.getElementById("mk-lab"); if(lm) lm.onchange=()=>{ j.labMarkup=Math.max(0,parseFloat(lm.value)||0); save(); render(); };
     bindTeam(j);
@@ -1250,7 +1320,15 @@ function bind(){
   if(state.view==="settings"){
     document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ state.settingsTab=b.dataset.tab; render(); });
     const ss=document.getElementById("s-save");
-    if(ss) ss.onclick=()=>{ const s=data.settings; s.company=val("s-company"); s.regName=val("s-regname"); s.address=val("s-address"); s.bank=val("s-bank"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q"; const sp=document.getElementById("s-spoken"); if(sp) s.spokenLang=sp.value; s.materialMarkup=num("s-markup"); s.labourCost=num("s-labour"); s.labourMarkup=num("s-labourmk"); s.travelFee=num("s-travel"); s.vat=num("s-vat"); save(); flash("Settings saved"); };
+    if(ss) ss.onclick=()=>{ const s=data.settings; const prevAddr=s.address;
+      s.company=val("s-company"); s.regName=val("s-regname"); s.address=val("s-address"); s.bank=val("s-bank"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q";
+      const sp=document.getElementById("s-spoken"); if(sp) s.spokenLang=sp.value;
+      s.materialMarkup=num("s-markup"); s.labourCost=num("s-labour"); s.labourMarkup=num("s-labourmk");
+      const tr=document.getElementById("s-travelrate"); if(tr) s.travelRate=parseFloat(tr.value)||0;
+      s.vat=num("s-vat"); save(); flash("Settings saved");
+      // re-geocode business if address changed or never located
+      if(s.address && (s.address!==prevAddr || s.businessLat==null)){ s.businessLat=null; s.businessLng=null; save(); flash("Locating business…"); geocode(s.address).then(g=>{ if(g){ s.businessLat=g.lat; s.businessLng=g.lng; save(); flash("Business located ✓"); render(); } else { flash("Couldn't locate that address."); } }); }
+    };
     const lf=document.getElementById("s-logo");
     if(lf) lf.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ data.settings.logo=r.result; data.settings.logoRatio=img.width/img.height||3; save(); flash("Logo added"); render(); }; img.onerror=()=>{ data.settings.logo=r.result; data.settings.logoRatio=3; save(); render(); }; img.src=r.result; }; r.readAsDataURL(f); };
     const lc=document.getElementById("s-logo-clear"); if(lc) lc.onclick=()=>{ data.settings.logo=""; data.settings.logoRatio=0; save(); render(); };
