@@ -130,6 +130,22 @@
   .ov-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
   .ov-live{min-height:64px;background:#f5f8ff;border-radius:12px;padding:13px;font-size:15px;margin:14px 0 4px;text-align:left;color:var(--ink)}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(214,69,69,.5)}70%{box-shadow:0 0 0 20px rgba(214,69,69,0)}100%{box-shadow:0 0 0 0 rgba(214,69,69,0)}}
+  /* manual add-item sheet */
+  #add-ov{position:fixed;inset:0;background:rgba(12,22,44,.55);display:none;align-items:flex-end;justify-content:center;z-index:55}
+  .add-card{background:#fff;border-radius:18px 18px 0 0;padding:16px 14px 18px;max-width:520px;width:100%;max-height:90vh;display:flex;flex-direction:column;gap:10px}
+  .add-head{display:flex;justify-content:space-between;align-items:center}
+  .add-head b{font-size:17px;color:var(--blue);font-weight:800}
+  .add-close{background:none;border:none;font-size:22px;color:var(--muted);cursor:pointer;padding:0 6px}
+  .add-list{flex:1;overflow:auto;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:2px -4px;padding:0 4px}
+  .add-row{display:flex;align-items:center;gap:8px;padding:10px 2px;border-bottom:1px solid var(--line)}
+  .add-row:last-child{border-bottom:none}
+  .add-row .add-d{flex:1;min-width:0}
+  .add-row .add-n{font-weight:600;font-size:14px}
+  .add-row .add-p{font-size:12px;color:var(--muted)}
+  .add-row .add-q{width:54px;padding:7px;text-align:center;font-size:14px}
+  .add-row .add-go{width:40px;height:40px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:22px;font-weight:700;cursor:pointer;flex:0 0 auto}
+  .add-row .add-go:active{background:var(--blue-dark)}
+  .add-empty{text-align:center;color:var(--muted);padding:24px 8px;font-size:13px}
   .thumbs{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
   .thumbs img{width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
   /* professional quote document */
@@ -626,6 +642,67 @@ function showOverlay(title, sub){
 }
 function hideOverlay(){ const ov=document.getElementById("voice-ov"); if(ov) ov.style.display="none"; }
 
+/* manual "add item" sheet for the quote builder */
+function openAdd(sectionId){
+  const j=currentJob(); if(!j) return;
+  if(!j.lineItems) buildQuote(j);
+  state.addSec = sectionId || (j.sections&&j.sections[0]&&j.sections[0].id) || "adj";
+  state.addSearch="";
+  showAddOverlay();
+  setTimeout(()=>{ const s=document.getElementById("add-search"); if(s) s.focus(); }, 50);
+}
+function closeAdd(){
+  const ov=document.getElementById("add-ov"); if(ov) ov.style.display="none";
+  state.addSearch="";
+  render();
+}
+function showAddOverlay(){
+  let ov=document.getElementById("add-ov");
+  if(!ov){ ov=document.createElement("div"); ov.id="add-ov"; document.body.appendChild(ov); }
+  const j=currentJob(), s=data.settings, mk=1+(s.materialMarkup/100);
+  const cat=[...data.catalogue].sort((a,b)=>a.name.localeCompare(b.name));
+  const rows=cat.map(c=>`
+    <div class="add-row" data-name="${esc(c.name.toLowerCase())}">
+      <div class="add-d"><div class="add-n">${esc(c.name)}</div><div class="add-p">${rands(c.cost*mk)} / ${esc(c.unit)}</div></div>
+      <input type="number" min="0" step="1" value="1" data-addqty="${c.id}" class="add-q"/>
+      <button class="add-go" data-addgo="${c.id}" title="Add">＋</button>
+    </div>`).join("");
+  const secs=j.sections||[];
+  const areaOpts = secs.length ? secs.map(sec=>`<option value="${sec.id}"${state.addSec===sec.id?" selected":""}>${esc(sec.title||"Area")}</option>`).join("")
+    : `<option value="adj" selected>Adjustments (no area)</option>`;
+  ov.innerHTML=`<div class="add-card">
+    <div class="add-head"><b>＋ Add item</b><button class="add-close" id="add-close">✕</button></div>
+    <label style="margin:0">Add to area</label>
+    <select id="add-area">${areaOpts}</select>
+    <input id="add-search" placeholder="Search materials…" autocomplete="off"/>
+    <div class="add-list" id="add-list">${rows}<div class="add-empty" id="add-empty" style="display:none">No match.</div></div>
+    <button class="btn primary" id="add-done">Done</button>
+  </div>`;
+  ov.style.display="flex";
+  document.getElementById("add-close").onclick=closeAdd;
+  document.getElementById("add-done").onclick=closeAdd;
+  document.getElementById("add-area").onchange=(e)=>{ state.addSec=e.target.value; };
+  document.getElementById("add-search").oninput=(e)=>{
+    const q=(e.target.value||"").toLowerCase().trim();
+    let shown=0;
+    document.querySelectorAll("#add-list .add-row").forEach(r=>{ const m=r.dataset.name.includes(q); r.style.display=m?"":"none"; if(m) shown++; });
+    document.getElementById("add-empty").style.display = shown?"none":"block";
+  };
+  document.querySelectorAll("[data-addgo]").forEach(b=>b.onclick=()=>{
+    const cat=data.catalogue.find(x=>x.id===b.dataset.addgo); if(!cat) return;
+    const qi=document.querySelector('[data-addqty="'+cat.id+'"]');
+    const qty=Math.max(0, parseFloat(qi.value)||1);
+    if(qty<=0){ flash("Set a quantity first."); return; }
+    const jj=currentJob();
+    let sec=null;
+    if(state.addSec && state.addSec!=="adj") sec=(jj.sections||[]).find(s=>s.id===state.addSec);
+    addLine(jj, cat, qty, sec);
+    buildKeepExtras(jj);
+    flash("Added "+qty+" × "+cat.name);
+    qi.value="1";
+  });
+}
+
 // dictate into a plain input/textarea by id, optional save callback
 function dictateInto(id, after){
   const el=document.getElementById(id); if(!el) return;
@@ -788,12 +865,13 @@ function viewQuote(){
     let mat=0,hrs=0; g.items.forEach(li=>{mat+=lineSell(li)*li.qty;hrs+=li.labourHrs*li.qty;});
     const sub=mat+hrs*s.labourRate;
     return `<div class="qsec-head"><span class="t">${esc(g.title)}</span>
+        <button class="m" data-qsecadd="${g.id}">＋ add</button>
         <button class="m" data-qsecmic="${g.id}">🎤 change</button></div>
       <div class="card" style="margin:0">${g.items.map(lineRow).join("")}
         <div class="secsub"><span>Area subtotal (excl. VAT)</span><span>${rands(sub)}</span></div></div>`;
   }
   const body = groups.length ? groups.map(secBlock).join("")
-    : `<div class="empty small">The sample AI didn't spot any items. Go back, add an area and describe the work (or use the sample job).</div>`;
+    : `<div class="empty small">No items yet. Add them by voice, by tapping <b>＋ Add item</b> below to pick from your price list, or go back and describe the work.</div>`;
 
   return topbar("Review Quote","capture")+`<div class="wrap">
     <div class="card" style="display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:12px">
@@ -805,7 +883,10 @@ function viewQuote(){
     </div>
     <div class="note">Draft built from your words, grouped by area. Tap “🎤 change” on an area or “Talk” up top — say “add two plug points”, “remove the downlights”, “change cable to 20 metres”.</div>
     ${body}
-    <button class="btn ghost sm" id="voice-edit" style="width:100%;margin-top:12px">🎤 Add or change by voice</button>
+    <div class="row" style="margin-top:12px">
+      <button class="btn ghost sm" id="add-item" style="width:100%">＋ Add item</button>
+      <button class="btn ghost sm" id="voice-edit" style="width:100%">🎤 By voice</button>
+    </div>
     <div class="card" style="margin-top:12px">
       <div class="totrow"><span class="lbl">Materials (incl. ${s.materialMarkup}% markup)</span><span>${rands(t.matSell)}</span></div>
       <div class="totrow"><span class="lbl">Labour — ${(Math.round(t.hours*10)/10)} hrs @ ${rands(s.labourRate)}</span><span>${rands(t.labour)}</span></div>
@@ -1038,6 +1119,8 @@ function bind(){
       startListen({ title:"Change "+((sec&&sec.title)||"this area"), sub:"e.g. “add two plug points”",
         onFinal:(t)=>{ if(!t) return; const r=applyEdit(j, (sec?sec.title+" ":"")+t); buildKeepExtras(j); flash(r); render(); } });
     });
+    document.querySelectorAll("[data-qsecadd]").forEach(b=>b.onclick=()=>openAdd(b.dataset.qsecadd));
+    const ai=document.getElementById("add-item"); if(ai) ai.onclick=()=>openAdd();
     const ve=document.getElementById("voice-edit"); if(ve) ve.onclick=()=>topbarVoice();
     const et=document.getElementById("edit-travel"); if(et) et.onclick=()=>{ const v=prompt("Travel fee (R):", j.travel!=null?j.travel:data.settings.travelFee); if(v!=null){ j.travel=parseFloat(v)||0; save(); render(); } };
     ensureJsPDF().catch(()=>{}); // preload so the Share sheet opens within the tap
