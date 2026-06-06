@@ -963,6 +963,7 @@ function render(){
     case "new": html=viewNew(); break;
     case "capture": html=viewCapture(); break;
     case "quote": html=viewQuote(); break;
+    case "preview": html=viewPreview(); break;
     case "sent": html=viewSent(); break;
     case "settings": html=viewSettings(); break;
   }
@@ -1152,7 +1153,8 @@ function viewQuote(){
       <div class="crow"><span>Quoted (excl. VAT)</span><span>${rands(t.sub)}</span></div>
       <div class="crow profit ${profit<0?"loss":""}"><span>${profit>=0?"Profit":"Loss"} on this job · ${margin}%</span><span>${rands(Math.abs(profit))}</span></div></div>`; })()}
     ${(j.photos&&j.photos.length)?`<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:16px 2px 2px"><input type="checkbox" id="inc-photos" checked style="width:auto;margin:0"/> Attach ${j.photos.length} before-photo${j.photos.length>1?"s":""} to the message</label>`:""}
-    <div class="row">
+    <button class="btn ghost sm" data-go="preview" style="width:100%;margin-top:14px">👁 Preview what the client sees</button>
+    <div class="row" style="margin-top:10px">
       <button class="btn green" id="send-wa">📄 WhatsApp</button>
       <button class="btn primary" id="send-email">📄 Email</button>
     </div>
@@ -1195,6 +1197,20 @@ function quoteDocHTML(job){
       <div class="qd-tr grand"><span>${esc(tx.total)}</span><span>${rands(t.total)}</span></div>
     </div></div>
     <div class="qd-foot"><div>${esc(tx.validity)}</div>${s.bank?`<div class="bank">${esc(s.bank)}</div>`:""}</div>
+  </div>`;
+}
+function viewPreview(){
+  const j=currentJob();
+  return topbar("Preview quote","quote")+`<div class="wrap">
+    <div class="note">This is exactly what the client will receive — in <b>${esc(langName(j.lang))}</b>. Nothing is sent yet.</div>
+    ${quoteDocHTML(j)}
+    ${(j.photos&&j.photos.length)?`<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:16px 2px 2px"><input type="checkbox" id="inc-photos" checked style="width:auto;margin:0"/> Attach ${j.photos.length} before-photo${j.photos.length>1?"s":""} to the message</label>`:""}
+    <button class="btn ghost sm" id="pv-pdf" style="width:100%;margin-top:14px">📄 Open the PDF</button>
+    <div class="row" style="margin-top:10px">
+      <button class="btn green" id="send-wa">📄 Send by WhatsApp</button>
+      <button class="btn primary" id="send-email">📄 Send by Email</button>
+    </div>
+    <button class="btn ghost" data-go="quote" style="margin-top:10px">← Back to edit</button>
   </div>`;
 }
 function viewSent(){
@@ -1447,6 +1463,18 @@ function bind(){
     const incPhotos=()=>{ const c=document.getElementById("inc-photos"); return c?c.checked:false; };
     document.getElementById("send-wa").onclick=()=>sendQuote(j,"whatsapp",incPhotos());
     document.getElementById("send-email").onclick=()=>sendQuote(j,"email",incPhotos());
+  }
+
+  if(state.view==="preview"){
+    const j=currentJob(); if(!j) return;
+    ensureJsPDF().catch(()=>{});
+    const incPhotos=()=>{ const c=document.getElementById("inc-photos"); return c?c.checked:false; };
+    const wa=document.getElementById("send-wa"); if(wa) wa.onclick=()=>sendQuote(j,"whatsapp",incPhotos());
+    const em=document.getElementById("send-email"); if(em) em.onclick=()=>sendQuote(j,"email",incPhotos());
+    const pp=document.getElementById("pv-pdf"); if(pp) pp.onclick=async ()=>{
+      try{ await ensureJsPDF(); const blob=generatePdfBlob(j); const url=URL.createObjectURL(blob); window.open(url,"_blank"); setTimeout(()=>URL.revokeObjectURL(url), 60000); }
+      catch(e){ flash("Couldn't open PDF: "+e.message); }
+    };
   }
 
   if(state.view==="settings"){
