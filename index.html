@@ -791,6 +791,48 @@ async function sendQuote(job, channel, includePhotos){
 }
 function finishSend(job, channel){ job.status="sent"; job.sentVia=(channel==="whatsapp"?"WhatsApp":"Email"); save(); setTimeout(()=>go("sent", job.id), 350); }
 
+/* ---------------- PDF TEXT EXTRACTION (pdf.js) ---------------- */
+const PDFJS_URL="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDFJS_WORKER="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+let pdfjsPromise=null;
+function ensurePdfJs(){
+  if(window.pdfjsLib) return Promise.resolve();
+  if(pdfjsPromise) return pdfjsPromise;
+  pdfjsPromise=new Promise((res,rej)=>{
+    const sc=document.createElement("script"); sc.src=PDFJS_URL;
+    sc.onload=()=>{ if(window.pdfjsLib){ window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER; res(); } else rej(new Error("pdf.js loaded incorrectly")); };
+    sc.onerror=()=>rej(new Error("PDF reader failed to load"));
+    document.head.appendChild(sc);
+  });
+  return pdfjsPromise;
+}
+async function extractPdfText(file){
+  await ensurePdfJs();
+  const buf=await file.arrayBuffer();
+  const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+  const allLines=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const tc=await page.getTextContent();
+    // Bucket text items by Y position to reconstruct visual rows
+    const buckets=[];
+    tc.items.forEach(it=>{
+      if(!it.str||!it.str.trim()) return;
+      const y=Math.round(it.transform[5]);
+      let b=buckets.find(bb=>Math.abs(bb.y-y)<=2);
+      if(!b){ b={y,items:[]}; buckets.push(b); }
+      b.items.push({x:it.transform[4], str:it.str});
+    });
+    buckets.sort((a,b)=>b.y-a.y); // top to bottom
+    buckets.forEach(b=>{
+      b.items.sort((a,b)=>a.x-b.x);
+      const line=b.items.map(i=>i.str).join(" ").replace(/\s+/g," ").trim();
+      if(line) allLines.push(line);
+    });
+  }
+  return allLines.join("\n");
+}
+
 /* ---------------- SUPPLIER PRICE IMPORT ---------------- */
 const SAMPLE_INVOICE =
 "ACME Electrical Wholesalers - Tax Invoice\n"+
@@ -814,13 +856,36 @@ function parsePriceLines(text){
   const out=[];
   String(text||"").split(/\r?\n/).forEach(raw=>{
     const line=raw.trim(); if(!line) return;
-    if(/^(item|description|product|name|qty|code)\b/i.test(line) && !/\d/.test(line.replace(/^[^,;\t]*/,""))) return; // header row
-    const nums=line.match(/\d[\d\s.,]*\d|\d/g); if(!nums) return;
-    const priceTok=nums[nums.length-1];
-    const idx=line.lastIndexOf(priceTok);
-    let name=line.slice(0,idx).replace(/[Rr]\s*$/,"").replace(/[\s,;:|\t\-]+$/,"").replace(/\s{2,}/g," ").trim();
+    // skip table headers and common invoice metadata
+    if(/^(item|description|product|name|qty|code|prod\s*code|weight|disc|unit\s*price|total|amount)\b/i.test(line)) return;
+    if(/^(quotation|invoice|date|due\s*date|tel|phone|fax|vat\s*(no|number)|account|customer|reference|page|terms|address|p\.?\s*o\.?\s*box|email|sub[\s-]?total|grand\s*total|sales\s*rep|overall\s*discount|bank|acc(ount)?\s*no|branch)\b/i.test(line)) return;
+    // capture each numeric token with its position so we can slice the name precisely
+    const re=/\d+(?:[ ,]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?/g;
+    const positions=[]; let m;
+    while((m=re.exec(line))!==null){ positions.push({tok:m[0], start:m.index}); }
+    if(!positions.length) return;
+    // skip lines whose only number looks like a long ID (e.g. quote number 00410859)
+    if(positions.length===1 && !/[.,]\d/.test(positions[0].tok) && positions[0].tok.replace(/\s/g,"").length>5) return;
+    // when there are 4+ numbers, the typical supplier-quote columns end with "... unit_price total". Pick 2nd-last as unit price when total ≈ qty × unit.
+    let pIdx=positions.length-1;
+    if(positions.length>=4){
+      const last=toNum(positions[positions.length-1].tok);
+      const sLast=toNum(positions[positions.length-2].tok);
+      if(sLast>0 && last>=sLast){
+        const ratio=last/sLast;
+        if(ratio>=1 && ratio<=100 && Math.abs(ratio-Math.round(ratio))<0.05) pIdx=positions.length-2;
+      }
+    }
+    const price=toNum(positions[pIdx].tok); if(!price || price>1e6) return;
+    // name = everything before this number token; then trim trailing qty/weight/disc-like numbers
+    let name=line.slice(0,positions[pIdx].start)
+      .replace(/[Rr]\s*$/,"")
+      .replace(/[\s,;:|\t\-]+$/,"")
+      .replace(/\s{2,}/g," ")
+      .trim()
+      .replace(/(\s+\d+(?:[.,]\d{1,2})?)+\s*$/, "")
+      .trim();
     if(!name || name.length<2) return;
-    const price=toNum(priceTok); if(!price) return;
     const unit=/per\s*m\b|\/m\b|per\s*met/i.test(line)?"m":"ea";
     out.push({name, price, unit});
   });
@@ -1536,11 +1601,25 @@ function bind(){
     function showProposals(text){ const parsed=parsePriceLines(text); if(!parsed.length){ flash("Couldn't find any priced items in that."); return; } state.proposals=buildProposals(parsed); state.settingsTab="import"; render(); }
     const samp=document.getElementById("sup-sample"); if(samp) samp.onclick=()=>{ state.supplierName=state.supplierName||"ACME Wholesalers"; showProposals(SAMPLE_INVOICE); };
     const rd=document.getElementById("sup-read"); if(rd) rd.onclick=()=>{ const t=val("sup-paste"); if(!t){ flash("Paste some price lines first, or use the sample."); return; } showProposals(t); };
-    const sf=document.getElementById("sup-file"); if(sf) sf.onchange=(e)=>{
+    const sf=document.getElementById("sup-file"); if(sf) sf.onchange=async (e)=>{
       const f=e.target.files[0]; if(!f) return;
       const isText=/\.(csv|txt)$/i.test(f.name) || /text|csv/.test(f.type);
-      if(isText){ const r=new FileReader(); r.onload=()=>showProposals(r.result); r.readAsText(f); }
-      else { flash("Reading photo/PDF invoices is the AI step — showing a sample for now."); state.supplierName=state.supplierName||f.name.replace(/\.[^.]+$/,""); showProposals(SAMPLE_INVOICE); }
+      const isPdf=/\.pdf$/i.test(f.name) || f.type==="application/pdf";
+      state.supplierName=state.supplierName||f.name.replace(/\.[^.]+$/,"");
+      if(isText){ const r=new FileReader(); r.onload=()=>showProposals(r.result); r.readAsText(f); return; }
+      if(isPdf){
+        flash("Reading PDF…");
+        try{
+          const text=await extractPdfText(f);
+          const parsed=parsePriceLines(text);
+          if(!parsed.length){ flash("Couldn't find priced items in that PDF — try a CSV export instead."); return; }
+          state.proposals=buildProposals(parsed); state.settingsTab="import"; render();
+          flash("Found "+parsed.length+" items in the PDF");
+        }catch(err){ flash("Couldn't read the PDF: "+err.message); }
+        return;
+      }
+      flash("Reading photo invoices is the AI step — showing a sample for now.");
+      showProposals(SAMPLE_INVOICE);
     };
     document.querySelectorAll("[data-prop]").forEach(cb=>cb.onchange=()=>{ const i=+cb.dataset.prop; if(state.proposals[i]) state.proposals[i].approved=cb.checked; });
     const pa=document.getElementById("prop-apply"); if(pa) pa.onclick=applyProposals;
