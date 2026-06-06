@@ -865,7 +865,8 @@ function parsePriceLines(text){
   let endIdx=allLines.length;
   if(startIdx>=0){
     for(let i=startIdx+1;i<allLines.length;i++){
-      if(/^(sub[\s-]?total|grand\s*total|total\s*(amount|excl|incl|due|paid|invoice)?\s*[:\.]?\s*r?\d|balance|bank\s*details|acc(ount)?\s*no|branch|terms|payment|notes?:|delivery|kind\s*regards|thank\s*you|signed|signature|deposit|vat\s*@|vat\s*[\d.]+%)/i.test(allLines[i])){
+      // match these footer/totals indicators anywhere in the line — PDF extraction often glues footer text together
+      if(/\b(sub\s*-?\s*total|grand\s*total|total\s+(amount|excl|incl|due|paid|invoice|goods|vat|weight|owing|exclusive|inclusive)|invoice\s+total|terms\s+(and|of)|conditions\s+(are|of)|bank\s+details|acc(ount)?\s+no|branch|payment\s+(terms|details|method|due)|days?\s+from\s+invoice|kindly\s+(note|see|find)|thank\s+you|kind\s+regards|yours\s+(faithfully|sincerely)|delivery\s+(date|note|address|details)|notes?:|signed|signature|deposit\s+(required|paid)|vat\s*@|vat\s*[\d.]+\s*%|balance\s+(due|owing)|please\s+(note|find))\b/i.test(allLines[i])){
         endIdx=i; break;
       }
     }
