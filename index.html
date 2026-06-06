@@ -148,6 +148,18 @@
   .add-row .add-go{width:40px;height:40px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:22px;font-weight:700;cursor:pointer;flex:0 0 auto}
   .add-row .add-go:active{background:var(--blue-dark)}
   .add-empty{text-align:center;color:var(--muted);padding:24px 8px;font-size:13px}
+  /* map pin-drop modal */
+  #map-ov{position:fixed;inset:0;background:rgba(12,22,44,.7);display:none;align-items:stretch;justify-content:center;z-index:60}
+  .map-card{background:#fff;width:100%;max-width:520px;height:100vh;display:flex;flex-direction:column}
+  .map-head{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--blue);color:#fff}
+  .map-head h3{flex:1;margin:0;font-size:16px;font-weight:700}
+  .map-head .x{background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 6px}
+  .map-body{flex:1;position:relative}
+  #leaflet-map{position:absolute;inset:0;background:#e7ebf3}
+  .map-locate{position:absolute;top:10px;right:10px;z-index:500;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 13px;font-size:13px;font-weight:700;color:var(--blue);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.2)}
+  .map-foot{padding:10px 12px;display:flex;gap:8px;align-items:center;background:#fff;border-top:1px solid var(--line)}
+  .map-coords{flex:1;font-size:12.5px;color:var(--muted)}
+  .map-foot .btn{margin-top:0;padding:11px 16px}
   /* staff / team / costing */
   .staffrow{display:flex;gap:6px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)}
   .staffrow input{padding:9px 10px;font-size:14px}
@@ -421,6 +433,65 @@ function bindTeam(j){
   document.querySelectorAll("[data-teamdel]").forEach(b=>b.onclick=()=>{ j.team=(j.team||[]).filter(t=>t.staffId!==b.dataset.teamdel); save(); render(); });
   const sel=document.getElementById("team-add-select"); if(sel) sel.onchange=()=>{ const id=sel.value; if(!id) return; j.team=j.team||[]; if(!j.team.some(t=>t.staffId===id)){ j.team.push({staffId:id, hours:0}); save(); render(); } };
 }
+/* ---------------- MAP PIN-DROP (Leaflet + OSM) ---------------- */
+const LEAFLET_CSS="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+const LEAFLET_JS ="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+let leafletPromise=null;
+function ensureLeaflet(){
+  if(window.L) return Promise.resolve();
+  if(leafletPromise) return leafletPromise;
+  leafletPromise=new Promise((res,rej)=>{
+    const link=document.createElement("link"); link.rel="stylesheet"; link.href=LEAFLET_CSS; document.head.appendChild(link);
+    const sc=document.createElement("script"); sc.src=LEAFLET_JS; sc.onload=()=>res(); sc.onerror=()=>rej(new Error("Map library failed to load")); document.head.appendChild(sc);
+  });
+  return leafletPromise;
+}
+let mapPickerState=null;
+async function openMapPicker(opts){
+  try{ await ensureLeaflet(); }
+  catch(e){ alert("Couldn't load the map. Check your internet and try again."); return; }
+  let ov=document.getElementById("map-ov");
+  if(!ov){ ov=document.createElement("div"); ov.id="map-ov"; document.body.appendChild(ov); }
+  ov.innerHTML=`<div class="map-card">
+    <div class="map-head"><h3>${esc(opts.title||"Pick location on map")}</h3><button class="x" id="map-close">✕</button></div>
+    <div class="map-body"><div id="leaflet-map"></div><button class="map-locate" id="map-locate">📍 My location</button></div>
+    <div class="map-foot"><div class="map-coords" id="map-coords">Tap the map to place a pin, or drag the existing one.</div>
+      <button class="btn ghost sm" id="map-cancel">Cancel</button>
+      <button class="btn primary sm" id="map-confirm">✓ Use this</button></div>
+  </div>`;
+  ov.style.display="flex";
+  let lat=opts.initialLat, lng=opts.initialLng;
+  let centerSet = lat!=null && lng!=null;
+  if(!centerSet){ lat=-33.9608; lng=25.6022; } // Gqeberha default
+  const map=L.map("leaflet-map").setView([lat,lng], centerSet?16:13);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap contributors",maxZoom:19}).addTo(map);
+  const marker=L.marker([lat,lng],{draggable:true}).addTo(map);
+  const coordsEl=document.getElementById("map-coords");
+  const updateCoords=()=>{ const p=marker.getLatLng(); coordsEl.textContent=`Lat ${p.lat.toFixed(5)}, Lng ${p.lng.toFixed(5)}`; };
+  if(centerSet) updateCoords();
+  marker.on("dragend", updateCoords);
+  map.on("click",(e)=>{ marker.setLatLng(e.latlng); updateCoords(); });
+  mapPickerState={ map, marker };
+  document.getElementById("map-close").onclick=closeMapPicker;
+  document.getElementById("map-cancel").onclick=closeMapPicker;
+  document.getElementById("map-confirm").onclick=()=>{ const p=marker.getLatLng(); closeMapPicker(); if(opts.onPick) opts.onPick({lat:p.lat,lng:p.lng}); };
+  document.getElementById("map-locate").onclick=()=>{
+    if(!navigator.geolocation){ flash("This phone doesn't support location."); return; }
+    flash("Finding your location…");
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{ const ll=[pos.coords.latitude,pos.coords.longitude]; map.setView(ll,17); marker.setLatLng(ll); updateCoords(); },
+      (err)=>{ flash("Couldn't get location"+(err&&err.message?": "+err.message:".")); },
+      {enableHighAccuracy:true, timeout:8000}
+    );
+  };
+  // Tiles render correctly after the modal is sized
+  setTimeout(()=>map.invalidateSize(), 80);
+}
+function closeMapPicker(){
+  const ov=document.getElementById("map-ov"); if(ov) ov.style.display="none";
+  if(mapPickerState){ try{ mapPickerState.map.remove(); }catch(e){} mapPickerState=null; }
+}
+
 /* ---------------- DISTANCE (geocoding + driving km) ---------------- */
 async function geocode(address){
   if(!address || !address.trim()) return null;
@@ -1047,7 +1118,7 @@ function viewQuote(){
       <div class="totrow"><span class="lbl">Materials markup <input type="number" min="0" step="1" id="mk-mat" value="${t.matMk}" class="mkpct"/> %</span><span class="prof">${rands(t.matMarkupAmt)}</span></div>
       <div class="totrow"><span class="lbl">Labour cost (${(Math.round(t.hours*10)/10)} ${t.usingTeam?"team hrs":"est. hrs"} @ ${rands(t.hours?t.labCost/t.hours:0)}/hr)</span><span>${rands(t.labCost)}</span></div>
       <div class="totrow"><span class="lbl">Labour markup <input type="number" min="0" step="1" id="mk-lab" value="${t.labMk}" class="mkpct"/> %</span><span class="prof">${rands(t.labMarkupAmt)}</span></div>
-      <div class="totrow"><span class="lbl">${(()=>{ if(j.travel!=null) return `Travel (manual) <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button> <button class="del" id="travel-auto" style="color:var(--blue);font-size:13px">use distance</button>`; if(j.distanceKm!=null) return `Travel — <button class="del" id="edit-km" style="color:var(--blue);font-size:14px;font-weight:700">${j.distanceKm} km</button> × ${rands(s.travelRate||0)}/km × 2 <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">↻</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; return `Travel <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">📍 calculate</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; })()}</span><span>${rands(t.travel)}</span></div>
+      <div class="totrow"><span class="lbl">${(()=>{ if(j.travel!=null) return `Travel (manual) <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button> <button class="del" id="travel-auto" style="color:var(--blue);font-size:13px">use distance</button>`; if(j.distanceKm!=null) return `Travel — <button class="del" id="edit-km" style="color:var(--blue);font-size:14px;font-weight:700">${j.distanceKm} km</button> × ${rands(s.travelRate||0)}/km × 2 <button class="del" id="travel-pin" style="color:var(--blue);font-size:13px">📍 set on map</button> <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">↻</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; return `Travel <button class="del" id="travel-pin" style="color:var(--blue);font-size:13px">📍 set on map</button> <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">calculate</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; })()}</span><span>${rands(t.travel)}</span></div>
       ${(j.distanceKm!=null && (s.businessLocatedAs||j.locatedAs))?`<div class="hint" style="font-size:11.5px;margin:-2px 0 4px;line-height:1.4"><b>From:</b> ${esc((s.businessLocatedAs||"").slice(0,90))}<br><b>To:</b> ${esc((j.locatedAs||"").slice(0,90))}<br>Different from Google? Tap the <b>km</b> to type the correct number.</div>`:""}
       <div class="totrow"><span class="lbl">Subtotal (excl. VAT)</span><span>${rands(t.sub)}</span></div>
       <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
@@ -1136,6 +1207,8 @@ function viewSettings(){
       <label>Registered name (legal entity)</label><input id="s-regname" value="${esc(s.regName||"")}"/>
       <label>Tagline / slogan</label><input id="s-tagline" value="${esc(s.tagline||"")}"/>
       <label>Business address</label><textarea id="s-address" style="min-height:54px">${esc(s.address||"")}</textarea>
+      <button class="btn ghost sm" id="s-pickmap" style="width:100%;margin-top:8px">📍 Pin business on map (most accurate)</button>
+      ${s.businessLat!=null?`<div class="hint" style="margin-top:4px"><span style="color:var(--green)">✓ Pinned at ${s.businessLat.toFixed(5)}, ${s.businessLng.toFixed(5)}</span></div>`:""}
       <label>Contact phone</label><input id="s-phone" value="${esc(s.phone||"")}"/>
       <label>Contact email</label><input id="s-email" value="${esc(s.email||"")}"/>
       <label>VAT number (leave blank if not registered)</label><input id="s-vatno" value="${esc(s.vatNo||"")}"/>
@@ -1307,6 +1380,23 @@ function bind(){
     const et=document.getElementById("edit-travel"); if(et) et.onclick=()=>{ const cur=j.travel!=null?j.travel:travelCost(j); const v=prompt("Travel fee (R) — leave blank for distance-based:", cur); if(v===null) return; if(v===""){ delete j.travel; save(); render(); return; } j.travel=parseFloat(v)||0; save(); render(); };
     const tc=document.getElementById("travel-calc"); if(tc) tc.onclick=()=>{ delete j.travel; delete j.lat; delete j.lng; delete j._geocodedAddr; delete j.locatedAs; flash("Recalculating distance…"); ensureDistance(j).then(r=>{ if(r.km!=null){ flash(`Distance set: ${r.km} km`); } else { flash(r.error||"Couldn't calculate distance."); } render(); }); };
     const ek=document.getElementById("edit-km"); if(ek) ek.onclick=()=>{ const v=prompt("Distance in km (one way) — this overrides the auto-calculation. Travel will be km × rate × 2.", j.distanceKm); if(v===null) return; const n=parseFloat(v); if(isNaN(n)||n<0){ flash("Enter a valid number of km."); return; } j.distanceKm=n; delete j.travel; save(); flash("Distance set to "+n+" km"); render(); };
+    const tp=document.getElementById("travel-pin"); if(tp) tp.onclick=()=>openMapPicker({
+      title:"Pin the job site",
+      initialLat:j.lat, initialLng:j.lng,
+      onPick:async (p)=>{
+        j.lat=p.lat; j.lng=p.lng;
+        j.locatedAs=`Pinned on map (${p.lat.toFixed(5)}, ${p.lng.toFixed(5)})`;
+        j._geocodedAddr=j.address;
+        delete j.travel; save(); flash("Site pinned ✓");
+        const s2=data.settings;
+        if(s2.businessLat==null){ flash("Now pin your business location in Settings to compute distance."); render(); return; }
+        flash("Calculating distance…");
+        const km=await routeKm({lat:s2.businessLat,lng:s2.businessLng},{lat:p.lat,lng:p.lng});
+        if(km!=null){ j.distanceKm=km; save(); flash(`Distance: ${km} km`); }
+        else { flash("Couldn't calculate driving distance."); }
+        render();
+      }
+    });
     const ta=document.getElementById("travel-auto"); if(ta) ta.onclick=()=>{ delete j.travel; save(); render(); if(j.distanceKm==null) document.getElementById("travel-calc")?.click(); };
     // auto-trigger distance calc on first quote view if business address is set and distance not yet known
     if(j.address && data.settings.address && j.distanceKm==null && j.travel==null && !j._distanceTried){ j._distanceTried=true; ensureDistance(j).then(r=>{ if(r.km!=null){ render(); } }); }
@@ -1329,8 +1419,19 @@ function bind(){
       const tr=document.getElementById("s-travelrate"); if(tr) s.travelRate=parseFloat(tr.value)||0;
       s.vat=num("s-vat"); save(); flash("Settings saved");
       // re-geocode business if address changed or never located
-      if(s.address && (s.address!==prevAddr || s.businessLat==null)){ s.businessLat=null; s.businessLng=null; delete s.businessLocatedAs; save(); flash("Locating business…"); geocode(s.address).then(g=>{ if(g){ s.businessLat=g.lat; s.businessLng=g.lng; s.businessLocatedAs=g.display; save(); flash("Business located ✓"); render(); } else { flash("Couldn't locate that address."); } }); }
+      const wasPinned=(s.businessLocatedAs||"").startsWith("Pinned");
+      if(s.address && !wasPinned && (s.address!==prevAddr || s.businessLat==null)){ s.businessLat=null; s.businessLng=null; delete s.businessLocatedAs; save(); flash("Locating business…"); geocode(s.address).then(g=>{ if(g){ s.businessLat=g.lat; s.businessLng=g.lng; s.businessLocatedAs=g.display; save(); flash("Business located ✓"); render(); } else { flash("Couldn't locate that address — try pinning on the map."); } }); }
     };
+    const pm=document.getElementById("s-pickmap");
+    if(pm) pm.onclick=()=>openMapPicker({
+      title:"Pin your business location",
+      initialLat:data.settings.businessLat, initialLng:data.settings.businessLng,
+      onPick:(p)=>{
+        data.settings.businessLat=p.lat; data.settings.businessLng=p.lng;
+        data.settings.businessLocatedAs=`Pinned on map (${p.lat.toFixed(5)}, ${p.lng.toFixed(5)})`;
+        save(); flash("Business pinned ✓"); render();
+      }
+    });
     const lf=document.getElementById("s-logo");
     if(lf) lf.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ data.settings.logo=r.result; data.settings.logoRatio=img.width/img.height||3; save(); flash("Logo added"); render(); }; img.onerror=()=>{ data.settings.logo=r.result; data.settings.logoRatio=3; save(); render(); }; img.src=r.result; }; r.readAsDataURL(f); };
     const lc=document.getElementById("s-logo-clear"); if(lc) lc.onclick=()=>{ data.settings.logo=""; data.settings.logoRatio=0; save(); render(); };
