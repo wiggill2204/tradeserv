@@ -854,11 +854,28 @@ function toNum(s){
 }
 function parsePriceLines(text){
   const out=[];
-  String(text||"").split(/\r?\n/).forEach(raw=>{
+  const allLines=String(text||"").split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+  // Find the table header (e.g. "Prod Code … Unit Price Total" or "Item, Price").
+  // If we find it, only parse lines INSIDE the items table, between the header and the totals/footer.
+  let startIdx=-1;
+  for(let i=0;i<allLines.length;i++){
+    if(/^(prod\s*code|item|description|product|name|code)\b/i.test(allLines[i]) &&
+       /(price|total|amount|cost|unit|rate)/i.test(allLines[i])){ startIdx=i; break; }
+  }
+  let endIdx=allLines.length;
+  if(startIdx>=0){
+    for(let i=startIdx+1;i<allLines.length;i++){
+      if(/^(sub[\s-]?total|grand\s*total|total\s*(amount|excl|incl|due|paid|invoice)?\s*[:\.]?\s*r?\d|balance|bank\s*details|acc(ount)?\s*no|branch|terms|payment|notes?:|delivery|kind\s*regards|thank\s*you|signed|signature|deposit|vat\s*@|vat\s*[\d.]+%)/i.test(allLines[i])){
+        endIdx=i; break;
+      }
+    }
+  }
+  const lines = (startIdx>=0) ? allLines.slice(startIdx+1, endIdx) : allLines;
+  lines.forEach(raw=>{
     const line=raw.trim(); if(!line) return;
-    // skip table headers and common invoice metadata
+    // skip table headers and common invoice metadata (extra safety, in case any made it through)
     if(/^(item|description|product|name|qty|code|prod\s*code|weight|disc|unit\s*price|total|amount)\b/i.test(line)) return;
-    if(/^(quotation|invoice|date|due\s*date|tel|phone|fax|vat\s*(no|number)|account|customer|reference|page|terms|address|p\.?\s*o\.?\s*box|email|sub[\s-]?total|grand\s*total|sales\s*rep|overall\s*discount|bank|acc(ount)?\s*no|branch)\b/i.test(line)) return;
+    if(/^(quotation|invoice|date|due\s*date|tel|phone|fax|vat\s*(no|number)|account|customer|reference|page|terms|address|p\.?\s*o\.?\s*box|email|sub[\s-]?total|grand\s*total|sales\s*rep|overall\s*discount|bank|acc(ount)?\s*no|branch|cell|attn|attention|notes?:|comments?:|delivery|signed|signature)\b/i.test(line)) return;
     // capture each numeric token with its position so we can slice the name precisely
     const re=/\d+(?:[ ,]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?/g;
     const positions=[]; let m;
@@ -885,7 +902,8 @@ function parsePriceLines(text){
       .trim()
       .replace(/(\s+\d+(?:[.,]\d{1,2})?)+\s*$/, "")
       .trim();
-    if(!name || name.length<2) return;
+    // name must include a real alphabetic word (skip wrapped detail lines like "800kg" or "2.4m")
+    if(!name || name.length<3 || !/[a-z]{3,}/i.test(name)) return;
     const unit=/per\s*m\b|\/m\b|per\s*met/i.test(line)?"m":"ea";
     out.push({name, price, unit});
   });
