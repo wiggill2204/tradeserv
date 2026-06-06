@@ -116,14 +116,29 @@
   .send-preview{background:#f5f8ff;border:1px dashed var(--blue);border-radius:12px;padding:14px;font-size:14px;white-space:pre-wrap;color:var(--ink)}
   .successbox{text-align:center;padding:24px 10px}
   .successbox .ic{width:74px;height:74px;border-radius:50%;background:var(--green);color:#fff;font-size:38px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
-  .pricerow{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
-  .pricerow .nm{flex:1;font-size:14px;min-width:0}
-  .pricerow .pin{width:96px}
-  .pricerow .pin input{padding:8px;text-align:right}
-  .pricerow .sup{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:var(--muted)}
-  .pricerow .sup input{border:none;border-bottom:1px dashed var(--line);background:transparent;padding:2px 4px;font-size:12px;color:var(--ink);font-weight:600;flex:1;min-width:60px;width:100%}
-  .pricerow .sup input:focus{outline:none;border-bottom-color:var(--blue)}
-  .pricerow .sup input::placeholder{font-weight:400;color:var(--muted);font-style:italic}
+  /* Price list table (Excel-style) */
+  .ptbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+  .ptbl th{background:#eef2f8;color:var(--blue);font-weight:700;text-align:left;padding:8px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--blue);white-space:nowrap}
+  .ptbl th.psortable{cursor:pointer;user-select:none}
+  .ptbl th.psortable:after{content:" ↕";opacity:.35;font-size:9px}
+  .ptbl th.psortable.sort-asc:after{content:" ▲";opacity:.95}
+  .ptbl th.psortable.sort-desc:after{content:" ▼";opacity:.95}
+  .ptbl th:nth-child(1){width:30px;padding:8px 2px;text-align:center}
+  .ptbl th:nth-child(3){width:54px;text-align:center}
+  .ptbl th:nth-child(4){width:84px}
+  .ptbl th:nth-child(5){width:76px;text-align:right;padding-right:6px}
+  .ptbl td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .ptbl tr.pchecked{background:#f0f8ff}
+  .ptbl td:nth-child(1){text-align:center;padding:7px 2px}
+  .ptbl input[type=checkbox]{width:auto;margin:0;cursor:pointer;transform:scale(1.1)}
+  .ptbl td.pnm{font-weight:600;color:var(--ink);line-height:1.3;font-size:12.5px;word-break:break-word}
+  .ptbl td.pupd{font-size:11px;color:var(--muted);white-space:nowrap;text-align:center}
+  .ptbl td.psup input{font-size:11.5px;padding:4px 5px;width:100%;border:1px dashed var(--line);background:transparent;border-radius:5px;font-weight:600;color:var(--blue);box-sizing:border-box;font-family:inherit;height:auto}
+  .ptbl td.psup input::placeholder{color:var(--muted);font-weight:400;font-style:italic}
+  .ptbl td.pcost input{font-size:12.5px;padding:5px 6px;text-align:right;width:100%;border:1px solid var(--line);border-radius:5px;font-weight:700;color:var(--ink);box-sizing:border-box;font-family:inherit;height:auto}
+  .bulk-bar{background:#eaf6fd;padding:10px 12px;border-radius:10px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid #bfe6f8}
+  .bulk-bar .bcount{font-weight:800;color:var(--blue);margin-right:auto;font-size:13px}
+  .bulk-bar .btn{margin-top:0;padding:6px 10px;font-size:12px;width:auto;flex:0 0 auto;background:#fff}
   .hint{font-size:12px;color:var(--muted);margin-top:4px}
   .seg{display:flex;background:#e7ebf3;border-radius:10px;padding:3px;margin-top:10px}
   .seg button{flex:1;border:none;background:none;padding:9px;border-radius:8px;font-weight:600;font-size:14px;color:var(--muted);cursor:pointer}
@@ -308,7 +323,8 @@ const DEMO_SECTIONS = [
 ];
 
 /* ---------------- STATE / STORAGE ---------------- */
-let state = { view:"jobs", jobId:null, settingsTab:"markups", activeSec:null, search:"", sort:"new" };
+let state = { view:"jobs", jobId:null, settingsTab:"markups", activeSec:null, search:"", sort:"new",
+  priceSelected:new Set(), priceSort:{key:"name", dir:"asc"}, priceSearch:"" };
 let data = load();
 let lastFocusId = null;
 
@@ -388,6 +404,24 @@ function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">
 function nextNumber(){ data.seq=(data.seq||0)+1; return data.seq; }
 function numberFor(job){ return job.number ? ((data.settings.quotePrefix||"Q")+"-"+String(job.number).padStart(4,"0")) : "—"; }
 function dateStr(ts){ try{ return new Date(ts).toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return ""; } }
+function shortDateStr(ts){ try{ return new Date(ts).toLocaleDateString("en-ZA",{day:"2-digit",month:"short"}); }catch(e){ return ""; } }
+function sortedFilteredCatalogue(){
+  let arr=(data.catalogue||[]).slice();
+  const q=(state.priceSearch||"").toLowerCase().trim();
+  if(q) arr=arr.filter(c=>(c.name||"").toLowerCase().includes(q)||(c.supplier||"").toLowerCase().includes(q));
+  const {key,dir}=state.priceSort||{key:"name",dir:"asc"};
+  arr.sort((a,b)=>{
+    let va,vb;
+    if(key==="updated"){ va=a.updated||0; vb=b.updated||0; }
+    else if(key==="supplier"){ va=(a.supplier||"~").toLowerCase(); vb=(b.supplier||"~").toLowerCase(); }
+    else if(key==="cost"){ va=a.cost||0; vb=b.cost||0; }
+    else { va=(a.name||"").toLowerCase(); vb=(b.name||"").toLowerCase(); }
+    if(va<vb) return dir==="asc"?-1:1;
+    if(va>vb) return dir==="asc"?1:-1;
+    return 0;
+  });
+  return arr;
+}
 
 /* ---------------- DEMO AI: text -> line items ---------------- */
 const NUMWORDS = {a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
@@ -1436,12 +1470,37 @@ function viewSettings(){
       <button class="btn ghost sm" id="staff-add" style="width:100%;margin-top:12px">＋ Add person</button>
     </div>`;
   } else if(tab==="prices"){
-    body=`<div class="card"><div class="hint" style="margin-bottom:8px">Prices you pay (excl. markup), ${data.catalogue.length} items. Edit a price, or use <b>Import</b> to update from a supplier. These now save and stick.</div>
-      ${data.catalogue.map(c=>`<div class="pricerow"><div class="nm">${esc(c.name)}<div class="muted" style="font-size:12px">per ${esc(c.unit)} · ${c.labourHrs} hr install${c.updated?` · upd ${esc(dateStr(c.updated))}`:""}</div>
-        <div class="sup"><span>🏬 Supplier:</span><input type="text" data-pricesupplier="${c.id}" value="${esc(c.supplier||"")}" placeholder="(add supplier)"/></div></div>
-        <div class="pin"><input type="number" data-price="${c.id}" value="${c.cost}"/></div>
-        <button class="sec-del" data-pricedel="${c.id}" title="Remove">✕</button></div>`).join("")}
-      <button class="btn primary" id="p-save">Save prices</button></div>`;
+    const cat=sortedFilteredCatalogue();
+    const sel=state.priceSelected;
+    const sk=state.priceSort.key, sd=state.priceSort.dir;
+    const rows=cat.map(c=>`<tr data-pid="${c.id}" class="${sel.has(c.id)?"pchecked":""}">
+      <td><input type="checkbox" data-pcheck="${c.id}" ${sel.has(c.id)?"checked":""}/></td>
+      <td class="pnm">${esc(c.name)}</td>
+      <td class="pupd">${c.updated?esc(shortDateStr(c.updated)):"—"}</td>
+      <td class="psup"><input type="text" data-pricesupplier="${c.id}" value="${esc(c.supplier||"")}" placeholder="—"/></td>
+      <td class="pcost"><input type="number" step="0.01" data-price="${c.id}" value="${c.cost}"/></td>
+    </tr>`).join("");
+    body=`<div class="card" style="padding:14px 12px">
+      <div class="hint" style="margin-bottom:8px">${data.catalogue.length} items in price list. Click a column header to sort, tick rows for bulk actions.</div>
+      <div class="ip" style="margin-bottom:8px"><input id="price-search" placeholder="Search by item or supplier…" value="${esc(state.priceSearch||"")}"/></div>
+      ${sel.size>0?`<div class="bulk-bar">
+        <span class="bcount">${sel.size} selected</span>
+        <button class="btn ghost" data-bulk="supplier">🏬 Set supplier</button>
+        <button class="btn ghost" data-bulk="adjust">% Adjust</button>
+        <button class="btn ghost" data-bulk="delete" style="color:var(--red)">✕ Delete</button>
+        <button class="btn ghost" data-bulk="clear">Clear</button>
+      </div>`:""}
+      <table class="ptbl">
+        <thead><tr>
+          <th><input type="checkbox" id="pchk-all"/></th>
+          <th class="psortable ${sk==="name"?"sort-"+sd:""}" data-psort="name">Item</th>
+          <th class="psortable ${sk==="updated"?"sort-"+sd:""}" data-psort="updated">Updated</th>
+          <th class="psortable ${sk==="supplier"?"sort-"+sd:""}" data-psort="supplier">Supplier</th>
+          <th class="psortable ${sk==="cost"?"sort-"+sd:""}" data-psort="cost">Cost</th>
+        </tr></thead>
+        <tbody>${rows||`<tr><td colspan="5" class="empty small" style="padding:24px">No items match the search.</td></tr>`}</tbody>
+      </table>
+    </div>`;
   } else {
     // IMPORT tab
     if(state.proposals){
@@ -1669,10 +1728,29 @@ function bind(){
     const lf=document.getElementById("s-logo");
     if(lf) lf.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ data.settings.logo=r.result; data.settings.logoRatio=img.width/img.height||3; save(); flash("Logo added"); render(); }; img.onerror=()=>{ data.settings.logo=r.result; data.settings.logoRatio=3; save(); render(); }; img.src=r.result; }; r.readAsDataURL(f); };
     const lc=document.getElementById("s-logo-clear"); if(lc) lc.onclick=()=>{ data.settings.logo=""; data.settings.logoRatio=0; save(); render(); };
-    const ps=document.getElementById("p-save");
-    if(ps) ps.onclick=()=>{ document.querySelectorAll("[data-price]").forEach(inp=>{ const c=data.catalogue.find(x=>x.id===inp.dataset.price); if(c) c.cost=parseFloat(inp.value)||0; }); save(); flash("Prices saved"); };
-    document.querySelectorAll("[data-pricedel]").forEach(b=>b.onclick=()=>{ if(confirm("Remove this item from the price list?")){ data.catalogue=data.catalogue.filter(c=>c.id!==b.dataset.pricedel); save(); render(); } });
+    // ---- Price list table ----
+    const psearch=document.getElementById("price-search");
+    if(psearch){ psearch.oninput=()=>{ state.priceSearch=psearch.value; render(); const el=document.getElementById("price-search"); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }; }
+    document.querySelectorAll("[data-psort]").forEach(th=>th.onclick=()=>{ const k=th.dataset.psort; if(state.priceSort.key===k){ state.priceSort.dir=state.priceSort.dir==="asc"?"desc":"asc"; } else { state.priceSort={key:k,dir:"asc"}; } render(); });
+    const chkAll=document.getElementById("pchk-all");
+    if(chkAll){
+      const visible=sortedFilteredCatalogue();
+      const allChk=visible.length>0 && visible.every(c=>state.priceSelected.has(c.id));
+      const someChk=visible.some(c=>state.priceSelected.has(c.id));
+      chkAll.checked=allChk; chkAll.indeterminate=someChk && !allChk;
+      chkAll.onchange=()=>{ if(chkAll.checked){ visible.forEach(c=>state.priceSelected.add(c.id)); } else { visible.forEach(c=>state.priceSelected.delete(c.id)); } render(); };
+    }
+    document.querySelectorAll("[data-pcheck]").forEach(cb=>cb.onchange=()=>{ if(cb.checked) state.priceSelected.add(cb.dataset.pcheck); else state.priceSelected.delete(cb.dataset.pcheck); render(); });
+    document.querySelectorAll("[data-price]").forEach(inp=>inp.onchange=()=>{ const c=data.catalogue.find(x=>x.id===inp.dataset.price); if(c){ const v=parseFloat(inp.value); if(!isNaN(v)){ c.cost=v; c.updated=Date.now(); save(); render(); } } });
     document.querySelectorAll("[data-pricesupplier]").forEach(inp=>inp.oninput=()=>{ const c=data.catalogue.find(x=>x.id===inp.dataset.pricesupplier); if(c){ c.supplier=inp.value.trim(); save(); } });
+    document.querySelectorAll("[data-bulk]").forEach(b=>b.onclick=()=>{
+      const ids=Array.from(state.priceSelected); if(!ids.length) return;
+      const a=b.dataset.bulk;
+      if(a==="clear"){ state.priceSelected=new Set(); render(); return; }
+      if(a==="delete"){ if(confirm(`Delete ${ids.length} item${ids.length>1?"s":""} from the price list?`)){ data.catalogue=data.catalogue.filter(c=>!state.priceSelected.has(c.id)); state.priceSelected=new Set(); save(); render(); flash(`${ids.length} item${ids.length>1?"s":""} deleted`); } return; }
+      if(a==="supplier"){ const sup=prompt(`Set supplier for ${ids.length} selected item${ids.length>1?"s":""}:`, ""); if(sup===null) return; ids.forEach(id=>{ const c=data.catalogue.find(x=>x.id===id); if(c){ c.supplier=sup.trim(); c.updated=Date.now(); } }); save(); render(); flash(`Supplier set on ${ids.length} item${ids.length>1?"s":""}`); return; }
+      if(a==="adjust"){ const v=prompt(`Adjust selected prices by % (e.g. 10 for +10%, -5 for -5%):`, ""); if(v===null) return; const p=parseFloat(v); if(isNaN(p)){ flash("Enter a valid percentage"); return; } ids.forEach(id=>{ const c=data.catalogue.find(x=>x.id===id); if(c){ c.cost=Math.round(c.cost*(1+p/100)*100)/100; c.updated=Date.now(); } }); save(); render(); flash(`Prices adjusted by ${p}% on ${ids.length} item${ids.length>1?"s":""}`); return; }
+    });
     // ---- Staff tab ----
     const sa=document.getElementById("staff-add"); if(sa) sa.onclick=()=>{ data.staff=data.staff||[]; data.staff.push({id:"st"+uid(), name:"", role:"", rate:200}); save(); render(); };
     document.querySelectorAll("[data-staff-name]").forEach(inp=>inp.oninput=()=>{ const p=data.staff.find(x=>x.id===inp.dataset["staffName"]); if(p){ p.name=inp.value; save(); } });
