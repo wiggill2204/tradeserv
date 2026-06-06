@@ -1041,6 +1041,8 @@ function viewCapture(){
       <div class="ip"><input id="c-client" value="${esc(j.client||"")}" placeholder="e.g. Mrs Naidoo"/>${fieldMic("c-client")}</div>
       <label>Site address</label>
       <div class="ip"><input id="c-address" value="${esc(j.address||"")}" placeholder="e.g. 12 Oak Road, Gqeberha"/>${fieldMic("c-address")}</div>
+      <button class="btn ghost sm" id="c-pinsite" style="width:100%;margin-top:8px">📍 Pin site on map (most accurate)</button>
+      ${j.lat!=null?`<div class="hint" style="margin-top:4px"><span style="color:var(--green)">✓ Pinned at ${j.lat.toFixed(5)}, ${j.lng.toFixed(5)}</span></div>`:""}
       <label>Email (for sending)</label>
       <div class="ip"><input id="c-email" type="email" value="${esc(j.email||"")}" placeholder="client@email.com"/>${fieldMic("c-email")}</div>
       <label>Mobile (for WhatsApp)</label>
@@ -1338,9 +1340,26 @@ function bind(){
   if(state.view==="capture"){
     const j=currentJob();
     const cmap={"c-client":"client","c-address":"address","c-email":"email","c-phone":"phone"};
-    Object.keys(cmap).forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=()=>{ j[cmap[id]]=el.value; if(id==="c-address"){ delete j.lat; delete j.lng; delete j.distanceKm; delete j._geocodedAddr; delete j._distanceTried; } save(); if(id==="c-client"){ const h=document.querySelector(".topbar h1"); if(h) h.textContent=el.value||"Capture"; } }; });
+    Object.keys(cmap).forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=()=>{ j[cmap[id]]=el.value; if(id==="c-address" && !((j.locatedAs||"").startsWith("Pinned"))){ delete j.lat; delete j.lng; delete j.distanceKm; delete j._geocodedAddr; delete j._distanceTried; } save(); if(id==="c-client"){ const h=document.querySelector(".topbar h1"); if(h) h.textContent=el.value||"Capture"; } }; });
     document.querySelectorAll("[data-fieldmic]").forEach(b=>{ const id=b.dataset.fieldmic; if(cmap[id]) b.onclick=()=>dictateInto(id,(v)=>{ j[cmap[id]]=v.trim(); save(); }); });
     const cl=document.getElementById("c-lang"); if(cl) cl.onchange=()=>{ j.lang=cl.value; save(); };
+    const cp=document.getElementById("c-pinsite"); if(cp) cp.onclick=()=>openMapPicker({
+      title:"Pin the job site",
+      initialLat:j.lat, initialLng:j.lng,
+      onPick:async (p)=>{
+        j.lat=p.lat; j.lng=p.lng;
+        j.locatedAs=`Pinned on map (${p.lat.toFixed(5)}, ${p.lng.toFixed(5)})`;
+        j._geocodedAddr=j.address;
+        delete j.travel; save(); flash("Site pinned ✓");
+        const s2=data.settings;
+        if(s2.businessLat!=null){
+          flash("Calculating distance…");
+          const km=await routeKm({lat:s2.businessLat,lng:s2.businessLng},{lat:p.lat,lng:p.lng});
+          if(km!=null){ j.distanceKm=km; save(); flash(`Distance: ${km} km`); }
+        }
+        render();
+      }
+    });
     document.querySelectorAll("[data-sectext]").forEach(ta=>{
       ta.onfocus=()=>{ state.activeSec=ta.dataset.sectext; };
       ta.oninput=()=>{ const sec=j.sections.find(s=>s.id===ta.dataset.sectext); if(sec){ sec.text=ta.value; save(); } };
