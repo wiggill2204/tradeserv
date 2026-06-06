@@ -465,14 +465,14 @@ async function ensureDistance(job){
   if(s.businessLat==null || s.businessLng==null){
     if(!s.address) return {error:"Business address not set in Settings."};
     const g=await geocode(s.address);
-    if(g){ s.businessLat=g.lat; s.businessLng=g.lng; save(); }
+    if(g){ s.businessLat=g.lat; s.businessLng=g.lng; s.businessLocatedAs=g.display; save(); }
     else return {error:"Couldn't locate the business address."};
   }
   // Geocode job site address
   if(!job.lat || !job.lng || job._geocodedAddr !== job.address){
     if(!job.address) return {error:"Site address is empty on this job."};
     const g=await geocode(job.address);
-    if(g){ job.lat=g.lat; job.lng=g.lng; job._geocodedAddr=job.address; save(); }
+    if(g){ job.lat=g.lat; job.lng=g.lng; job.locatedAs=g.display; job._geocodedAddr=job.address; save(); }
     else return {error:"Couldn't locate the site address."};
   }
   // Driving distance
@@ -1047,7 +1047,8 @@ function viewQuote(){
       <div class="totrow"><span class="lbl">Materials markup <input type="number" min="0" step="1" id="mk-mat" value="${t.matMk}" class="mkpct"/> %</span><span class="prof">${rands(t.matMarkupAmt)}</span></div>
       <div class="totrow"><span class="lbl">Labour cost (${(Math.round(t.hours*10)/10)} ${t.usingTeam?"team hrs":"est. hrs"} @ ${rands(t.hours?t.labCost/t.hours:0)}/hr)</span><span>${rands(t.labCost)}</span></div>
       <div class="totrow"><span class="lbl">Labour markup <input type="number" min="0" step="1" id="mk-lab" value="${t.labMk}" class="mkpct"/> %</span><span class="prof">${rands(t.labMarkupAmt)}</span></div>
-      <div class="totrow"><span class="lbl">${(()=>{ if(j.travel!=null) return `Travel (manual) <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button> <button class="del" id="travel-auto" style="color:var(--blue);font-size:13px">use distance</button>`; if(j.distanceKm!=null) return `Travel — ${j.distanceKm} km × ${rands(s.travelRate||0)}/km × 2 <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">↻</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; return `Travel <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">📍 calculate</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; })()}</span><span>${rands(t.travel)}</span></div>
+      <div class="totrow"><span class="lbl">${(()=>{ if(j.travel!=null) return `Travel (manual) <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button> <button class="del" id="travel-auto" style="color:var(--blue);font-size:13px">use distance</button>`; if(j.distanceKm!=null) return `Travel — <button class="del" id="edit-km" style="color:var(--blue);font-size:14px;font-weight:700">${j.distanceKm} km</button> × ${rands(s.travelRate||0)}/km × 2 <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">↻</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; return `Travel <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">📍 calculate</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; })()}</span><span>${rands(t.travel)}</span></div>
+      ${(j.distanceKm!=null && (s.businessLocatedAs||j.locatedAs))?`<div class="hint" style="font-size:11.5px;margin:-2px 0 4px;line-height:1.4"><b>From:</b> ${esc((s.businessLocatedAs||"").slice(0,90))}<br><b>To:</b> ${esc((j.locatedAs||"").slice(0,90))}<br>Different from Google? Tap the <b>km</b> to type the correct number.</div>`:""}
       <div class="totrow"><span class="lbl">Subtotal (excl. VAT)</span><span>${rands(t.sub)}</span></div>
       <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
       <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
@@ -1304,7 +1305,8 @@ function bind(){
     const ai=document.getElementById("add-item"); if(ai) ai.onclick=()=>openAdd();
     const ve=document.getElementById("voice-edit"); if(ve) ve.onclick=()=>topbarVoice();
     const et=document.getElementById("edit-travel"); if(et) et.onclick=()=>{ const cur=j.travel!=null?j.travel:travelCost(j); const v=prompt("Travel fee (R) — leave blank for distance-based:", cur); if(v===null) return; if(v===""){ delete j.travel; save(); render(); return; } j.travel=parseFloat(v)||0; save(); render(); };
-    const tc=document.getElementById("travel-calc"); if(tc) tc.onclick=()=>{ delete j.travel; flash("Calculating distance…"); ensureDistance(j).then(r=>{ if(r.km!=null){ flash(`Distance set: ${r.km} km`); } else { flash(r.error||"Couldn't calculate distance."); } render(); }); };
+    const tc=document.getElementById("travel-calc"); if(tc) tc.onclick=()=>{ delete j.travel; delete j.lat; delete j.lng; delete j._geocodedAddr; delete j.locatedAs; flash("Recalculating distance…"); ensureDistance(j).then(r=>{ if(r.km!=null){ flash(`Distance set: ${r.km} km`); } else { flash(r.error||"Couldn't calculate distance."); } render(); }); };
+    const ek=document.getElementById("edit-km"); if(ek) ek.onclick=()=>{ const v=prompt("Distance in km (one way) — this overrides the auto-calculation. Travel will be km × rate × 2.", j.distanceKm); if(v===null) return; const n=parseFloat(v); if(isNaN(n)||n<0){ flash("Enter a valid number of km."); return; } j.distanceKm=n; delete j.travel; save(); flash("Distance set to "+n+" km"); render(); };
     const ta=document.getElementById("travel-auto"); if(ta) ta.onclick=()=>{ delete j.travel; save(); render(); if(j.distanceKm==null) document.getElementById("travel-calc")?.click(); };
     // auto-trigger distance calc on first quote view if business address is set and distance not yet known
     if(j.address && data.settings.address && j.distanceKm==null && j.travel==null && !j._distanceTried){ j._distanceTried=true; ensureDistance(j).then(r=>{ if(r.km!=null){ render(); } }); }
@@ -1327,7 +1329,7 @@ function bind(){
       const tr=document.getElementById("s-travelrate"); if(tr) s.travelRate=parseFloat(tr.value)||0;
       s.vat=num("s-vat"); save(); flash("Settings saved");
       // re-geocode business if address changed or never located
-      if(s.address && (s.address!==prevAddr || s.businessLat==null)){ s.businessLat=null; s.businessLng=null; save(); flash("Locating business…"); geocode(s.address).then(g=>{ if(g){ s.businessLat=g.lat; s.businessLng=g.lng; save(); flash("Business located ✓"); render(); } else { flash("Couldn't locate that address."); } }); }
+      if(s.address && (s.address!==prevAddr || s.businessLat==null)){ s.businessLat=null; s.businessLng=null; delete s.businessLocatedAs; save(); flash("Locating business…"); geocode(s.address).then(g=>{ if(g){ s.businessLat=g.lat; s.businessLng=g.lng; s.businessLocatedAs=g.display; save(); flash("Business located ✓"); render(); } else { flash("Couldn't locate that address."); } }); }
     };
     const lf=document.getElementById("s-logo");
     if(lf) lf.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ data.settings.logo=r.result; data.settings.logoRatio=img.width/img.height||3; save(); flash("Logo added"); render(); }; img.onerror=()=>{ data.settings.logo=r.result; data.settings.logoRatio=3; save(); render(); }; img.src=r.result; }; r.readAsDataURL(f); };
