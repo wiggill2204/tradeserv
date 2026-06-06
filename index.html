@@ -400,6 +400,28 @@ function totals(job){
 }
 function lineSell(li, job){ return li.cost*(1+ matMkPct(job)/100); }
 function staffById(id){ return data.staff.find(p=>p.id===id); }
+function teamCardHTML(j){
+  const assigned=(j.team&&j.team.length)?j.team.map(t=>{ const p=staffById(t.staffId); if(!p) return ""; const cost=(t.hours||0)*(p.rate||0);
+    return `<div class="teamrow"><div class="nm"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.role||"")} @ ${rands(p.rate)}/hr</div></div><div class="hrs"><input type="number" min="0" step="0.5" data-teamhrs="${esc(t.staffId)}" value="${t.hours||0}"/></div><div class="cost">${rands(cost)}</div><button class="del" data-teamdel="${esc(t.staffId)}">✕</button></div>`;
+  }).join("") : `<div class="empty small" style="padding:14px">No one assigned yet — pick from the dropdown below.</div>`;
+  const unassigned=(data.staff||[]).filter(p=>!(j.team||[]).some(t=>t.staffId===p.id));
+  let picker;
+  if(unassigned.length){
+    picker=`<select id="team-add-select" style="margin-top:10px"><option value="">＋ Add team member…</option>${unassigned.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} — ${esc(p.role||"")} (${rands(p.rate)}/hr)</option>`).join("")}</select>`;
+  } else if(data.staff && data.staff.length){
+    picker=`<div class="hint" style="margin-top:8px">Everyone on staff is already on this job.</div>`;
+  } else {
+    picker=`<div class="hint" style="margin-top:8px">Add your team in <b>Settings → Staff</b> first.</div>`;
+  }
+  const teamTotal=(j.team&&j.team.length)?(()=>{const c=costToCompany(j);return `<div class="teamtotal"><span>Team total: ${c.hours} hr</span><span>${rands(c.labour)} cost</span></div>`;})():"";
+  return `<div class="hint" style="margin-bottom:6px">Who's on this job, and how many hours each. You can add more than one person.</div>
+    ${assigned}${picker}${teamTotal}`;
+}
+function bindTeam(j){
+  document.querySelectorAll("[data-teamhrs]").forEach(inp=>inp.oninput=()=>{ const id=inp.dataset.teamhrs; const t=(j.team||[]).find(x=>x.staffId===id); if(t){ t.hours=Math.max(0,parseFloat(inp.value)||0); save(); render(); } });
+  document.querySelectorAll("[data-teamdel]").forEach(b=>b.onclick=()=>{ j.team=(j.team||[]).filter(t=>t.staffId!==b.dataset.teamdel); save(); render(); });
+  const sel=document.getElementById("team-add-select"); if(sel) sel.onchange=()=>{ const id=sel.value; if(!id) return; j.team=j.team||[]; if(!j.team.some(t=>t.staffId===id)){ j.team.push({staffId:id, hours:0}); save(); render(); } };
+}
 function costToCompany(job){
   const s=data.settings;
   const mat=(job.lineItems||[]).reduce((a,li)=>a+li.cost*li.qty, 0);
@@ -896,12 +918,7 @@ function viewCapture(){
     <div class="chips">${SECTION_CHIPS.map(c=>`<button class="chip" data-chip="${esc(c)}">+ ${esc(c)}</button>`).join("")}
       <button class="chip" data-chip="">+ Custom</button></div>
     <h2 style="margin-top:18px">Team & time</h2>
-    <div class="card">
-      <div class="hint" style="margin-bottom:6px">Who's on this job, and how many hours each. Used for <b>your</b> job costing — doesn't change the client quote.</div>
-      ${((j.team&&j.team.length)?j.team.map(t=>{ const p=staffById(t.staffId); if(!p) return ""; const cost=(t.hours||0)*(p.rate||0); return `<div class="teamrow"><div class="nm"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.role||"")} @ ${rands(p.rate)}/hr</div></div><div class="hrs"><input type="number" min="0" step="0.5" data-teamhrs="${esc(t.staffId)}" value="${t.hours||0}"/></div><div class="cost">${rands(cost)}</div><button class="del" data-teamdel="${esc(t.staffId)}">✕</button></div>`; }).join("") : `<div class="empty small" style="padding:14px">No one assigned yet — tap a name below.</div>`)}
-      ${(data.staff||[]).filter(p=>!(j.team||[]).some(t=>t.staffId===p.id)).length?`<div class="chips" style="margin-top:10px">${(data.staff||[]).filter(p=>!(j.team||[]).some(t=>t.staffId===p.id)).map(p=>`<button class="chip" data-teamadd="${esc(p.id)}">+ ${esc(p.name)}</button>`).join("")}</div>`:`<div class="hint" style="margin-top:8px">${data.staff&&data.staff.length?"Everyone on staff is already on this job.":"Add your team in <b>Settings → Staff</b> first."}</div>`}
-      ${(j.team&&j.team.length)?(()=>{const c=costToCompany(j);return `<div class="teamtotal"><span>Team total: ${c.hours} hr</span><span>${rands(c.labour)} cost</span></div>`;})():""}
-    </div>
+    <div class="card">${teamCardHTML(j)}</div>
     <div class="card" style="margin-top:12px">
       <label style="margin-top:0">Photos (optional)</label>
       <input type="file" id="f-photo" accept="image/*" capture="environment"/>
@@ -958,6 +975,8 @@ function viewQuote(){
       <button class="btn ghost sm" id="add-item" style="width:100%">＋ Add item</button>
       <button class="btn ghost sm" id="voice-edit" style="width:100%">🎤 By voice</button>
     </div>
+    <h2 style="margin-top:14px">Team on this job</h2>
+    <div class="card">${teamCardHTML(j)}</div>
     <div class="card" style="margin-top:12px">
       <div class="totrow"><span class="lbl">Materials cost</span><span>${rands(t.matCost)}</span></div>
       <div class="totrow"><span class="lbl">Materials markup <input type="number" min="0" step="1" id="mk-mat" value="${t.matMk}" class="mkpct"/> %</span><span class="prof">${rands(t.matMarkupAmt)}</span></div>
@@ -1200,9 +1219,7 @@ function bind(){
       j.sections=j.sections||[]; const sec={id:uid(),title:title||"Area",text:""}; j.sections.push(sec); state.activeSec=sec.id; save(); render();
     });
     document.getElementById("demo-fill").onclick=()=>{ j.sections=DEMO_SECTIONS.map(s=>({id:uid(),title:s.title,text:s.text})); save(); render(); };
-    document.querySelectorAll("[data-teamadd]").forEach(b=>b.onclick=()=>{ j.team=j.team||[]; if(!j.team.some(t=>t.staffId===b.dataset.teamadd)){ j.team.push({staffId:b.dataset.teamadd, hours:0}); save(); render(); } });
-    document.querySelectorAll("[data-teamhrs]").forEach(inp=>inp.oninput=()=>{ const id=inp.dataset.teamhrs; const t=(j.team||[]).find(x=>x.staffId===id); if(t){ t.hours=Math.max(0,parseFloat(inp.value)||0); save(); const row=inp.closest(".teamrow"); const p=staffById(id); if(row&&p){ const c=row.querySelector(".cost"); if(c) c.textContent=rands(t.hours*(p.rate||0)); } } });
-    document.querySelectorAll("[data-teamdel]").forEach(b=>b.onclick=()=>{ j.team=(j.team||[]).filter(t=>t.staffId!==b.dataset.teamdel); save(); render(); });
+    bindTeam(j);
     const ph=document.getElementById("f-photo");
     if(ph) ph.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ j.photos=j.photos||[]; j.photos.push(r.result); save(); render(); }; r.readAsDataURL(f); };
     document.getElementById("to-quote").onclick=()=>{ stopListen(); buildQuote(j); go("quote", j.id); };
@@ -1223,6 +1240,7 @@ function bind(){
     const et=document.getElementById("edit-travel"); if(et) et.onclick=()=>{ const v=prompt("Travel fee (R):", j.travel!=null?j.travel:data.settings.travelFee); if(v!=null){ j.travel=parseFloat(v)||0; save(); render(); } };
     const mm=document.getElementById("mk-mat"); if(mm) mm.onchange=()=>{ j.matMarkup=Math.max(0,parseFloat(mm.value)||0); save(); render(); };
     const lm=document.getElementById("mk-lab"); if(lm) lm.onchange=()=>{ j.labMarkup=Math.max(0,parseFloat(lm.value)||0); save(); render(); };
+    bindTeam(j);
     ensureJsPDF().catch(()=>{}); // preload so the Share sheet opens within the tap
     const incPhotos=()=>{ const c=document.getElementById("inc-photos"); return c?c.checked:false; };
     document.getElementById("send-wa").onclick=()=>sendQuote(j,"whatsapp",incPhotos());
