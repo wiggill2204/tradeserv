@@ -146,6 +146,29 @@
   .add-row .add-go{width:40px;height:40px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:22px;font-weight:700;cursor:pointer;flex:0 0 auto}
   .add-row .add-go:active{background:var(--blue-dark)}
   .add-empty{text-align:center;color:var(--muted);padding:24px 8px;font-size:13px}
+  /* staff / team / costing */
+  .staffrow{display:flex;gap:6px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)}
+  .staffrow input{padding:9px 10px;font-size:14px}
+  .staffrow .nm{flex:1.6;min-width:0}
+  .staffrow .rl{flex:1.1;min-width:0}
+  .staffrow .rt{width:80px}
+  .staffrow .rt input{text-align:right}
+  .teamrow{display:flex;gap:8px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line)}
+  .teamrow:last-child{border-bottom:none}
+  .teamrow .nm{flex:1;min-width:0}
+  .teamrow .nm .t{font-weight:700;font-size:14px}
+  .teamrow .nm .s{font-size:12px;color:var(--muted)}
+  .teamrow .hrs{width:60px}
+  .teamrow .hrs input{padding:7px;text-align:center;font-size:14px}
+  .teamrow .cost{width:84px;text-align:right;font-weight:700;font-size:13px;color:var(--blue)}
+  .teamrow .del{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0 2px}
+  .teamtotal{display:flex;justify-content:space-between;margin-top:8px;font-weight:700;font-size:14px;color:var(--blue)}
+  .costing{background:#f3f7fc;border:1px solid #c9d6ec;border-radius:12px;padding:13px 14px;margin-top:12px}
+  .costing h3{font-size:11px;margin:0 0 6px;color:var(--blue);font-weight:800;letter-spacing:1px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+  .costing h3 .note{font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0;font-size:11px}
+  .costing .crow{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:#4a566e}
+  .costing .crow.profit{font-size:15px;font-weight:800;color:var(--green);border-top:1px solid #c9d6ec;margin-top:6px;padding-top:8px}
+  .costing .crow.loss{color:var(--red)}
   .thumbs{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
   .thumbs img{width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
   /* professional quote document */
@@ -223,6 +246,12 @@ const SEED_CATALOGUE = [
 
 const SECTION_CHIPS = ["Kitchen","Bathroom","Lounge","Bedroom","Outside","Garage","Roof","DB / Board","Geyser"];
 
+const SEED_STAFF = [
+  {id:"st-lead", name:"Lead Electrician", role:"Senior",     rate:250},
+  {id:"st-elec", name:"Electrician",       role:"Technician", rate:200},
+  {id:"st-app",  name:"Apprentice",        role:"Trainee",    rate:150}
+];
+
 /* Languages: en always; af + xh chosen. sr = speech-recognition code for the mic. */
 const LANGS = [
   {code:"en", name:"English",  sr:"en-ZA"},
@@ -265,12 +294,13 @@ let data = load();
 let lastFocusId = null;
 
 function cloneSeed(){ return JSON.parse(JSON.stringify(SEED_CATALOGUE)); }
+function cloneStaff(){ return JSON.parse(JSON.stringify(SEED_STAFF)); }
 function load(){
   try{
     const raw = localStorage.getItem("tradeserv");
-    if(raw){ const d=JSON.parse(raw); d.settings={...DEFAULT_SETTINGS, ...(d.settings||{})}; if(!d.jobs) d.jobs=[]; d.seq=Math.max(d.seq||0, ...d.jobs.map(j=>j.number||0), 0); if(!d.catalogue||!d.catalogue.length) d.catalogue=cloneSeed(); return d; }
+    if(raw){ const d=JSON.parse(raw); d.settings={...DEFAULT_SETTINGS, ...(d.settings||{})}; if(!d.jobs) d.jobs=[]; d.seq=Math.max(d.seq||0, ...d.jobs.map(j=>j.number||0), 0); if(!d.catalogue||!d.catalogue.length) d.catalogue=cloneSeed(); if(!d.staff) d.staff=cloneStaff(); return d; }
   }catch(e){}
-  return { settings:{...DEFAULT_SETTINGS}, jobs:[], catalogue:cloneSeed() };
+  return { settings:{...DEFAULT_SETTINGS}, jobs:[], catalogue:cloneSeed(), staff:cloneStaff() };
 }
 function save(){ try{ localStorage.setItem("tradeserv", JSON.stringify(data)); }catch(e){} }
 function go(view, jobId){ state.view=view; if(jobId!==undefined) state.jobId=jobId; render(); window.scrollTo(0,0); }
@@ -349,6 +379,14 @@ function totals(job){
   return { matSell, hours, labour, travel, sub, vat, total:sub+vat };
 }
 function lineSell(li){ return li.cost*(1+data.settings.materialMarkup/100); }
+function staffById(id){ return data.staff.find(p=>p.id===id); }
+function costToCompany(job){
+  const mat=(job.lineItems||[]).reduce((a,li)=>a+li.cost*li.qty, 0);
+  let hours=0, labour=0;
+  (job.team||[]).forEach(t=>{ const p=staffById(t.staffId); if(p){ hours+=(t.hours||0); labour+=(t.hours||0)*(p.rate||0); } });
+  const travel=job.travel!=null?job.travel:data.settings.travelFee;
+  return { mat, hours, labour, travel, total: mat+labour+travel };
+}
 
 /* ---------------- VOICE COMMAND PARSING ---------------- */
 const ALIAS={cable:"c25", wire:"c25", breaker:"cb20", board:"db18", plug:"dbl", socket:"dbl"};
@@ -832,6 +870,13 @@ function viewCapture(){
     ${secs}${emptyState}
     <div class="chips">${SECTION_CHIPS.map(c=>`<button class="chip" data-chip="${esc(c)}">+ ${esc(c)}</button>`).join("")}
       <button class="chip" data-chip="">+ Custom</button></div>
+    <h2 style="margin-top:18px">Team & time</h2>
+    <div class="card">
+      <div class="hint" style="margin-bottom:6px">Who's on this job, and how many hours each. Used for <b>your</b> job costing — doesn't change the client quote.</div>
+      ${((j.team&&j.team.length)?j.team.map(t=>{ const p=staffById(t.staffId); if(!p) return ""; const cost=(t.hours||0)*(p.rate||0); return `<div class="teamrow"><div class="nm"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.role||"")} @ ${rands(p.rate)}/hr</div></div><div class="hrs"><input type="number" min="0" step="0.5" data-teamhrs="${esc(t.staffId)}" value="${t.hours||0}"/></div><div class="cost">${rands(cost)}</div><button class="del" data-teamdel="${esc(t.staffId)}">✕</button></div>`; }).join("") : `<div class="empty small" style="padding:14px">No one assigned yet — tap a name below.</div>`)}
+      ${(data.staff||[]).filter(p=>!(j.team||[]).some(t=>t.staffId===p.id)).length?`<div class="chips" style="margin-top:10px">${(data.staff||[]).filter(p=>!(j.team||[]).some(t=>t.staffId===p.id)).map(p=>`<button class="chip" data-teamadd="${esc(p.id)}">+ ${esc(p.name)}</button>`).join("")}</div>`:`<div class="hint" style="margin-top:8px">${data.staff&&data.staff.length?"Everyone on staff is already on this job.":"Add your team in <b>Settings → Staff</b> first."}</div>`}
+      ${(j.team&&j.team.length)?(()=>{const c=costToCompany(j);return `<div class="teamtotal"><span>Team total: ${c.hours} hr</span><span>${rands(c.labour)} cost</span></div>`;})():""}
+    </div>
     <div class="card" style="margin-top:12px">
       <label style="margin-top:0">Photos (optional)</label>
       <input type="file" id="f-photo" accept="image/*" capture="environment"/>
@@ -895,6 +940,13 @@ function viewQuote(){
       <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
       <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
     </div>
+    ${(()=>{ const c=costToCompany(j); const profit=t.sub-c.total; const margin=t.sub>0?Math.round(profit/t.sub*100):0; const teamSummary=(j.team&&j.team.length)?j.team.map(x=>{const p=staffById(x.staffId); return p?(p.name.split(" ")[0]+" "+(x.hours||0)+"h"):"";}).filter(Boolean).join(" · "):"no team assigned"; return `<div class="costing"><h3>Job costing (for you)<span class="note">cost-to-company</span></h3>
+      <div class="crow"><span>Materials cost</span><span>${rands(c.mat)}</span></div>
+      <div class="crow"><span>Labour cost (${esc(teamSummary)})</span><span>${rands(c.labour)}</span></div>
+      <div class="crow"><span>Travel</span><span>${rands(c.travel)}</span></div>
+      <div class="crow"><span>Total cost to you</span><span><b>${rands(c.total)}</b></span></div>
+      <div class="crow"><span>Quoted (excl. VAT)</span><span>${rands(t.sub)}</span></div>
+      <div class="crow profit ${profit<0?"loss":""}"><span>${profit>=0?"Profit":"Loss"} on this job · ${margin}%</span><span>${rands(Math.abs(profit))}</span></div></div>`; })()}
     ${(j.photos&&j.photos.length)?`<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:16px 2px 2px"><input type="checkbox" id="inc-photos" checked style="width:auto;margin:0"/> Attach ${j.photos.length} before-photo${j.photos.length>1?"s":""} to the message</label>`:""}
     <div class="row">
       <button class="btn green" id="send-wa">📄 WhatsApp</button>
@@ -958,7 +1010,8 @@ function viewSettings(){
   const s=data.settings, tab=state.settingsTab;
   const seg=`<div class="seg">
     <button data-tab="markups" class="${tab==="markups"?"on":""}">Rates</button>
-    <button data-tab="prices" class="${tab==="prices"?"on":""}">Price list</button>
+    <button data-tab="prices" class="${tab==="prices"?"on":""}">Prices</button>
+    <button data-tab="staff" class="${tab==="staff"?"on":""}">Staff</button>
     <button data-tab="import" class="${tab==="import"?"on":""}">Import</button></div>`;
   let body;
   if(tab==="markups"){
@@ -984,6 +1037,17 @@ function viewSettings(){
       <select id="s-spoken">${LANGS.map(l=>`<option value="${l.sr}"${(s.spokenLang||"en-ZA")===l.sr?" selected":""}>${esc(l.name)}</option>`).join("")}</select>
       <div class="hint">English & Afrikaans work well in phone browsers. isiXhosa voice is limited in browsers — the live app will use a proper speech service.</div>
       <button class="btn primary" id="s-save">Save settings</button></div>`;
+  } else if(tab==="staff"){
+    body=`<div class="card"><div class="hint" style="margin-bottom:8px">Your team. The rate is what each person costs the business per hour (cost-to-company). Add them once here, then assign to jobs.</div>
+      ${(data.staff||[]).map(p=>`<div class="staffrow" data-staff="${esc(p.id)}">
+        <input class="nm" data-staff-name="${esc(p.id)}" value="${esc(p.name)}" placeholder="Name"/>
+        <input class="rl" data-staff-role="${esc(p.id)}" value="${esc(p.role||"")}" placeholder="Role"/>
+        <div class="rt"><input data-staff-rate="${esc(p.id)}" type="number" value="${p.rate||0}"/></div>
+        <button class="sec-del" data-staff-del="${esc(p.id)}" title="Remove">✕</button>
+      </div>`).join("")}
+      ${(!data.staff||!data.staff.length)?`<div class="empty small" style="padding:18px">No staff yet — add your first person below.</div>`:""}
+      <button class="btn ghost sm" id="staff-add" style="width:100%;margin-top:12px">＋ Add person</button>
+    </div>`;
   } else if(tab==="prices"){
     body=`<div class="card"><div class="hint" style="margin-bottom:8px">Prices you pay (excl. markup), ${data.catalogue.length} items. Edit a price, or use <b>Import</b> to update from a supplier. These now save and stick.</div>
       ${data.catalogue.map(c=>`<div class="pricerow"><div class="nm">${esc(c.name)}<div class="muted" style="font-size:12px">per ${esc(c.unit)} · ${c.labourHrs} hr install${c.updated?` · upd ${esc(dateStr(c.updated))}`:""}</div></div>
@@ -1105,6 +1169,9 @@ function bind(){
       j.sections=j.sections||[]; const sec={id:uid(),title:title||"Area",text:""}; j.sections.push(sec); state.activeSec=sec.id; save(); render();
     });
     document.getElementById("demo-fill").onclick=()=>{ j.sections=DEMO_SECTIONS.map(s=>({id:uid(),title:s.title,text:s.text})); save(); render(); };
+    document.querySelectorAll("[data-teamadd]").forEach(b=>b.onclick=()=>{ j.team=j.team||[]; if(!j.team.some(t=>t.staffId===b.dataset.teamadd)){ j.team.push({staffId:b.dataset.teamadd, hours:0}); save(); render(); } });
+    document.querySelectorAll("[data-teamhrs]").forEach(inp=>inp.oninput=()=>{ const id=inp.dataset.teamhrs; const t=(j.team||[]).find(x=>x.staffId===id); if(t){ t.hours=Math.max(0,parseFloat(inp.value)||0); save(); const row=inp.closest(".teamrow"); const p=staffById(id); if(row&&p){ const c=row.querySelector(".cost"); if(c) c.textContent=rands(t.hours*(p.rate||0)); } } });
+    document.querySelectorAll("[data-teamdel]").forEach(b=>b.onclick=()=>{ j.team=(j.team||[]).filter(t=>t.staffId!==b.dataset.teamdel); save(); render(); });
     const ph=document.getElementById("f-photo");
     if(ph) ph.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ j.photos=j.photos||[]; j.photos.push(r.result); save(); render(); }; r.readAsDataURL(f); };
     document.getElementById("to-quote").onclick=()=>{ stopListen(); buildQuote(j); go("quote", j.id); };
@@ -1139,6 +1206,12 @@ function bind(){
     const ps=document.getElementById("p-save");
     if(ps) ps.onclick=()=>{ document.querySelectorAll("[data-price]").forEach(inp=>{ const c=data.catalogue.find(x=>x.id===inp.dataset.price); if(c) c.cost=parseFloat(inp.value)||0; }); save(); flash("Prices saved"); };
     document.querySelectorAll("[data-pricedel]").forEach(b=>b.onclick=()=>{ if(confirm("Remove this item from the price list?")){ data.catalogue=data.catalogue.filter(c=>c.id!==b.dataset.pricedel); save(); render(); } });
+    // ---- Staff tab ----
+    const sa=document.getElementById("staff-add"); if(sa) sa.onclick=()=>{ data.staff=data.staff||[]; data.staff.push({id:"st"+uid(), name:"", role:"", rate:200}); save(); render(); };
+    document.querySelectorAll("[data-staff-name]").forEach(inp=>inp.oninput=()=>{ const p=data.staff.find(x=>x.id===inp.dataset["staffName"]); if(p){ p.name=inp.value; save(); } });
+    document.querySelectorAll("[data-staff-role]").forEach(inp=>inp.oninput=()=>{ const p=data.staff.find(x=>x.id===inp.dataset["staffRole"]); if(p){ p.role=inp.value; save(); } });
+    document.querySelectorAll("[data-staff-rate]").forEach(inp=>inp.oninput=()=>{ const p=data.staff.find(x=>x.id===inp.dataset["staffRate"]); if(p){ p.rate=parseFloat(inp.value)||0; save(); } });
+    document.querySelectorAll("[data-staff-del]").forEach(b=>b.onclick=()=>{ const id=b.dataset["staffDel"]; if(confirm("Remove this person from staff?")){ data.staff=data.staff.filter(p=>p.id!==id); data.jobs.forEach(j=>{ if(j.team) j.team=j.team.filter(t=>t.staffId!==id); }); save(); render(); } });
 
     // ---- Import tab ----
     const sn=document.getElementById("sup-name"); if(sn) sn.oninput=()=>{ state.supplierName=sn.value; };
