@@ -117,9 +117,13 @@
   .successbox{text-align:center;padding:24px 10px}
   .successbox .ic{width:74px;height:74px;border-radius:50%;background:var(--green);color:#fff;font-size:38px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
   .pricerow{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
-  .pricerow .nm{flex:1;font-size:14px}
+  .pricerow .nm{flex:1;font-size:14px;min-width:0}
   .pricerow .pin{width:96px}
   .pricerow .pin input{padding:8px;text-align:right}
+  .pricerow .sup{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:var(--muted)}
+  .pricerow .sup input{border:none;border-bottom:1px dashed var(--line);background:transparent;padding:2px 4px;font-size:12px;color:var(--ink);font-weight:600;flex:1;min-width:60px;width:100%}
+  .pricerow .sup input:focus{outline:none;border-bottom-color:var(--blue)}
+  .pricerow .sup input::placeholder{font-weight:400;color:var(--muted);font-style:italic}
   .hint{font-size:12px;color:var(--muted);margin-top:4px}
   .seg{display:flex;background:#e7ebf3;border-radius:10px;padding:3px;margin-top:10px}
   .seg button{flex:1;border:none;background:none;padding:9px;border-radius:8px;font-weight:600;font-size:14px;color:var(--muted);cursor:pointer}
@@ -988,7 +992,7 @@ function applyProposals(){
   let updated=0, added=0;
   (state.proposals||[]).forEach(p=>{
     if(!p.approved || p.status==="same") return;
-    if(p.matchId){ const c=data.catalogue.find(x=>x.id===p.matchId); if(c){ c.cost=p.price; c.updated=Date.now(); updated++; } }
+    if(p.matchId){ const c=data.catalogue.find(x=>x.id===p.matchId); if(c){ c.cost=p.price; c.updated=Date.now(); if(state.supplierName) c.supplier=state.supplierName; updated++; } }
     else { data.catalogue.push({ id:"sup"+uid(), name:p.name, unit:p.unit||"ea", cost:p.price, labourHrs:0.5, kw:[p.name.toLowerCase()], supplier:(state.supplierName||""), updated:Date.now() }); added++; }
   });
   save(); state.proposals=null;
@@ -1433,7 +1437,8 @@ function viewSettings(){
     </div>`;
   } else if(tab==="prices"){
     body=`<div class="card"><div class="hint" style="margin-bottom:8px">Prices you pay (excl. markup), ${data.catalogue.length} items. Edit a price, or use <b>Import</b> to update from a supplier. These now save and stick.</div>
-      ${data.catalogue.map(c=>`<div class="pricerow"><div class="nm">${esc(c.name)}<div class="muted" style="font-size:12px">per ${esc(c.unit)} · ${c.labourHrs} hr install${c.updated?` · upd ${esc(dateStr(c.updated))}`:""}</div></div>
+      ${data.catalogue.map(c=>`<div class="pricerow"><div class="nm">${esc(c.name)}<div class="muted" style="font-size:12px">per ${esc(c.unit)} · ${c.labourHrs} hr install${c.updated?` · upd ${esc(dateStr(c.updated))}`:""}</div>
+        <div class="sup"><span>🏬 Supplier:</span><input type="text" data-pricesupplier="${c.id}" value="${esc(c.supplier||"")}" placeholder="(add supplier)"/></div></div>
         <div class="pin"><input type="number" data-price="${c.id}" value="${c.cost}"/></div>
         <button class="sec-del" data-pricedel="${c.id}" title="Remove">✕</button></div>`).join("")}
       <button class="btn primary" id="p-save">Save prices</button></div>`;
@@ -1667,6 +1672,7 @@ function bind(){
     const ps=document.getElementById("p-save");
     if(ps) ps.onclick=()=>{ document.querySelectorAll("[data-price]").forEach(inp=>{ const c=data.catalogue.find(x=>x.id===inp.dataset.price); if(c) c.cost=parseFloat(inp.value)||0; }); save(); flash("Prices saved"); };
     document.querySelectorAll("[data-pricedel]").forEach(b=>b.onclick=()=>{ if(confirm("Remove this item from the price list?")){ data.catalogue=data.catalogue.filter(c=>c.id!==b.dataset.pricedel); save(); render(); } });
+    document.querySelectorAll("[data-pricesupplier]").forEach(inp=>inp.oninput=()=>{ const c=data.catalogue.find(x=>x.id===inp.dataset.pricesupplier); if(c){ c.supplier=inp.value.trim(); save(); } });
     // ---- Staff tab ----
     const sa=document.getElementById("staff-add"); if(sa) sa.onclick=()=>{ data.staff=data.staff||[]; data.staff.push({id:"st"+uid(), name:"", role:"", rate:200}); save(); render(); };
     document.querySelectorAll("[data-staff-name]").forEach(inp=>inp.oninput=()=>{ const p=data.staff.find(x=>x.id===inp.dataset["staffName"]); if(p){ p.name=inp.value; save(); } });
