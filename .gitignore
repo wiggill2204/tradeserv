@@ -2,6 +2,7 @@
 node_modules/
 tunnel.log
 site/
+make_icons.py
 open-on-phone.html
 *.output
 .DS_Store

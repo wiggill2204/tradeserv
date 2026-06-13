@@ -2,9 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#16284a" />
 <title>TradeServ — Quote on site</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="TradeServ" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -34,7 +41,8 @@
   }
   .topbar{
     position:sticky; top:0; z-index:20; background:var(--grad-blue); color:#fff;
-    display:flex; align-items:center; gap:10px; padding:14px 16px;
+    display:flex; align-items:center; gap:10px;
+    padding:14px 16px; padding-top:calc(14px + env(safe-area-inset-top));
     box-shadow:0 4px 18px rgba(15,29,56,.28);
     border-bottom:1px solid rgba(255,255,255,.06);
   }
@@ -299,6 +307,7 @@ const DEFAULT_SETTINGS = {
   logo: "", logoRatio: 0,
   quotePrefix: "Q",
   spokenLang: "en-ZA",
+  trade: "Electrician",
   materialMarkup: 25, labourMarkup: 75, travelRate: 8, travelFee: 250, vat: 15
 };
 
@@ -320,6 +329,7 @@ const SEED_CATALOGUE = [
 ];
 
 const SECTION_CHIPS = ["Kitchen","Bathroom","Lounge","Bedroom","Outside","Garage","Roof","DB / Board","Geyser"];
+const TRADES = ["Electrician","Plumber","Carpenter","Builder","Painter","Tiler","HVAC / Aircon","Roofer","Welder","Handyman / General","Other"];
 
 const SEED_STAFF = [
   {id:"st-lead", name:"Lead Electrician", role:"Senior",     rate:250},
@@ -1475,16 +1485,19 @@ function viewSent(){
 function viewSettings(){
   const s=data.settings, tab=state.settingsTab;
   const seg=`<div class="seg">
-    <button data-tab="markups" class="${tab==="markups"?"on":""}">Rates</button>
+    <button data-tab="markups" class="${tab==="markups"?"on":""}">Business</button>
     <button data-tab="prices" class="${tab==="prices"?"on":""}">Prices</button>
     <button data-tab="staff" class="${tab==="staff"?"on":""}">Staff</button>
     <button data-tab="import" class="${tab==="import"?"on":""}">Import</button></div>`;
   let body;
   if(tab==="markups"){
     body=`<div class="card">
+      <label>Your trade</label>
+      <select id="s-trade">${TRADES.map(t=>`<option value="${esc(t)}"${(s.trade||"")===t?" selected":""}>${esc(t)}</option>`).join("")}</select>
+      <div class="hint">Used to tailor the app to your line of work. You can change it any time.</div>
       <label>Company logo (shows on every quote)</label>
       <input type="file" id="s-logo" accept="image/*"/>
-      ${s.logo?`<div style="margin-top:8px;display:flex;align-items:center;gap:10px"><img src="${s.logo}" style="max-height:50px;max-width:150px;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff"/><button class="btn ghost sm" id="s-logo-clear">Remove</button></div>`:`<div class="hint">No logo yet — a navy “AC” badge is used until you add one.</div>`}
+      ${s.logo?`<div style="margin-top:8px;display:flex;align-items:center;gap:10px"><img src="${s.logo}" style="max-height:50px;max-width:150px;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff"/><button class="btn ghost sm" id="s-logo-clear">Remove</button></div>`:`<div class="hint">No logo yet — a default badge is used on quotes until you add one.</div>`}
       <label>Company name (on quotes)</label><input id="s-company" value="${esc(s.company)}"/>
       <label>Registered name (legal entity)</label><input id="s-regname" value="${esc(s.regName||"")}"/>
       <label>Tagline / slogan</label><input id="s-tagline" value="${esc(s.tagline||"")}"/>
@@ -1763,6 +1776,7 @@ function bind(){
     document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ state.settingsTab=b.dataset.tab; render(); });
     const ss=document.getElementById("s-save");
     if(ss) ss.onclick=()=>{ const s=data.settings; const prevAddr=s.address;
+      const trd=document.getElementById("s-trade"); if(trd) s.trade=trd.value;
       s.company=val("s-company"); s.regName=val("s-regname"); s.address=val("s-address"); s.bank=val("s-bank"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q";
       const sp=document.getElementById("s-spoken"); if(sp) s.spokenLang=sp.value;
       s.materialMarkup=num("s-markup"); s.labourMarkup=num("s-labourmk");
@@ -1867,6 +1881,8 @@ function bind(){
 /* boot */
 document.addEventListener("focusin",(e)=>{ if(e.target&&e.target.matches&&e.target.matches("input,textarea")) lastFocusId=e.target.id||null; });
 render();
+/* PWA: register service worker for offline open + installability */
+if("serviceWorker" in navigator){ window.addEventListener("load",()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); }); }
 </script>
 </body>
 </html>
