@@ -171,12 +171,12 @@
   .entrytbl{border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .entryhead{display:flex;background:#eef2f8;padding:7px 0;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
   .entryhead > div{padding:0 8px}
-  .ec-d{flex:1.8;min-width:0}
-  .ec-s{flex:1.2;min-width:0}
-  .ec-p{width:84px;text-align:right}
-  .ec-x{width:34px;text-align:center}
+  .ec-d{flex:1.8;min-width:0;width:auto}
+  .ec-s{flex:1.2;min-width:0;width:auto}
+  .ec-p{flex:0 0 84px;width:84px;text-align:right}
+  .ec-x{flex:0 0 34px;width:34px;text-align:center}
   .entryrow{display:flex;align-items:center;border-top:1px solid var(--line)}
-  .entryrow input{border:none;background:transparent;padding:9px 8px;font-size:14px;width:100%;border-radius:0}
+  .entryrow input{border:none;background:transparent;padding:9px 8px;font-size:14px;border-radius:0;box-sizing:border-box}
   .entryrow input.ec-p{text-align:right}
   .entryrow input:focus{background:#f5f9ff;outline:1.5px solid var(--blue);outline-offset:-1px}
   .entryrow input::placeholder{color:#b0b7c2;font-style:italic}
