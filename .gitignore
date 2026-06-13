@@ -3,6 +3,7 @@ node_modules/
 tunnel.log
 site/
 make_icons.py
+supabase_setup.sql
 open-on-phone.html
 *.output
 .DS_Store

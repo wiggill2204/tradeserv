@@ -286,6 +286,17 @@
   .qd-tr.grand{background:var(--blue);color:#fff;font-weight:800;font-size:15px;border-radius:8px;padding:9px 10px;margin-top:5px}
   .qd-foot{margin-top:14px;border-top:1px solid var(--line);padding-top:10px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
   .qd-foot .bank{white-space:pre-line;color:#4a566e}
+  /* auth */
+  .auth-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:80vh;color:var(--muted);font-weight:600}
+  .spin{width:34px;height:34px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--amber);animation:spin 0.8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .auth-hero{text-align:center;padding:18px 10px 22px}
+  .auth-mark{width:62px;height:62px;border-radius:18px;background:var(--grad-blue);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;box-shadow:var(--shadow-blue)}
+  .auth-h1{font-size:23px;font-weight:800;letter-spacing:-.4px;color:var(--ink)}
+  .auth-sub{font-size:14px;color:var(--muted);margin-top:5px;line-height:1.5}
+  .auth-err{background:#fdecec;border:1px solid #f5c2c2;color:#b02525;border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px;font-weight:600}
+  .acct-badge{display:inline-flex;align-items:center;gap:6px;background:#eaf6fd;color:var(--blue);font-weight:700;font-size:12px;padding:5px 11px;border-radius:20px}
+  .code-box{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:24px;font-weight:800;letter-spacing:4px;color:var(--blue);background:#f3f7fc;border:1.5px dashed var(--amber);border-radius:12px;padding:14px;text-align:center;margin:8px 0}
 </style>
 </head>
 <body>
@@ -389,7 +400,9 @@ function load(){
   }catch(e){}
   return { settings:{...DEFAULT_SETTINGS}, jobs:[], catalogue:cloneSeed(), staff:cloneStaff() };
 }
-function save(){ try{ localStorage.setItem("tradeserv", JSON.stringify(data)); }catch(e){} }
+function localKey(){ return acct&&acct.companyId ? "tradeserv:"+acct.companyId : "tradeserv"; }
+function saveLocal(){ try{ localStorage.setItem(localKey(), JSON.stringify(data)); }catch(e){} }
+function save(){ saveLocal(); if(acct){ if(state.jobId) dirtyJobs.add(state.jobId); scheduleSync(); } }
 function go(view, jobId){ state.view=view; if(jobId!==undefined) state.jobId=jobId; render(); window.scrollTo(0,0); }
 function currentJob(){ const j=data.jobs.find(x=>x.id===state.jobId); if(j) normalize(j); return j; }
 function normalize(job){
@@ -1341,6 +1354,38 @@ function viewCapture(){
   </div>`;
 }
 
+function ownerQuoteDetail(j,t,s){
+  return `<h2 style="margin-top:14px">Team on this job</h2>
+    <div class="card">${teamCardHTML(j)}</div>
+    <div class="card" style="margin-top:12px">
+      <div class="totrow"><span class="lbl">Materials cost</span><span>${rands(t.matCost)}</span></div>
+      <div class="totrow"><span class="lbl">Materials markup <input type="number" min="0" step="1" id="mk-mat" value="${t.matMk}" class="mkpct"/> %</span><span class="prof">${rands(t.matMarkupAmt)}</span></div>
+      <div class="totrow"><span class="lbl">Labour cost (${(Math.round(t.hours*10)/10)} ${t.usingTeam?"team hrs":"est. hrs"} @ ${rands(t.hours?t.labCost/t.hours:0)}/hr)</span><span>${rands(t.labCost)}</span></div>
+      <div class="totrow"><span class="lbl">Labour markup <input type="number" min="0" step="1" id="mk-lab" value="${t.labMk}" class="mkpct"/> %</span><span class="prof">${rands(t.labMarkupAmt)}</span></div>
+      <div class="totrow"><span class="lbl">${(()=>{ if(j.travel!=null) return `Travel (manual) <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button> <button class="del" id="travel-auto" style="color:var(--blue);font-size:13px">use distance</button>`; if(j.distanceKm!=null) return `Travel — <button class="del" id="edit-km" style="color:var(--blue);font-size:14px;font-weight:700">${j.distanceKm} km</button> × ${rands(s.travelRate||0)}/km × 2 <button class="del" id="travel-pin" style="color:var(--blue);font-size:13px">📍 set on map</button> <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">↻</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; return `Travel <button class="del" id="travel-pin" style="color:var(--blue);font-size:13px">📍 set on map</button> <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">calculate</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; })()}</span><span>${rands(t.travel)}</span></div>
+      ${(j.distanceKm!=null && (s.businessLocatedAs||j.locatedAs))?`<div class="hint" style="font-size:11.5px;margin:-2px 0 4px;line-height:1.4"><b>From:</b> ${esc((s.businessLocatedAs||"").slice(0,90))}<br><b>To:</b> ${esc((j.locatedAs||"").slice(0,90))}<br>Different from Google? Tap the <b>km</b> to type the correct number.</div>`:""}
+      <div class="totrow"><span class="lbl">Subtotal (excl. VAT)</span><span>${rands(t.sub)}</span></div>
+      <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
+      <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
+    </div>
+    ${(()=>{ const c=costToCompany(j); const profit=t.sub-c.total; const margin=t.sub>0?Math.round(profit/t.sub*100):0; const teamSummary=(j.team&&j.team.length)?j.team.map(x=>{const p=staffById(x.staffId); return p?(p.name.split(" ")[0]+" "+(x.hours||0)+"h"):"";}).filter(Boolean).join(" · "):"no team assigned"; return `<div class="costing"><h3>Job costing (for you)<span class="note">cost-to-company</span></h3>
+      <div class="crow"><span>Materials cost</span><span>${rands(c.mat)}</span></div>
+      <div class="crow"><span>Labour cost (${esc(teamSummary)})</span><span>${rands(c.labour)}</span></div>
+      <div class="crow"><span>Travel</span><span>${rands(c.travel)}</span></div>
+      <div class="crow"><span>Total cost to you</span><span><b>${rands(c.total)}</b></span></div>
+      <div class="crow"><span>Quoted (excl. VAT)</span><span>${rands(t.sub)}</span></div>
+      <div class="crow profit ${profit<0?"loss":""}"><span>${profit>=0?"Profit":"Loss"} on this job · ${margin}%</span><span>${rands(Math.abs(profit))}</span></div></div>`; })()}`;
+}
+function quoterQuoteDetail(j,t,s){
+  return `<div class="card" style="margin-top:14px">
+      <div class="totrow"><span class="lbl">Materials</span><span>${rands(t.matSell)}</span></div>
+      <div class="totrow"><span class="lbl">Labour</span><span>${rands(t.labSell)}</span></div>
+      <div class="totrow"><span class="lbl">Travel</span><span>${rands(t.travel)}</span></div>
+      <div class="totrow"><span class="lbl">Subtotal (excl. VAT)</span><span>${rands(t.sub)}</span></div>
+      <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
+      <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
+    </div>`;
+}
 function viewQuote(){
   const j=currentJob();
   if(!j.lineItems) buildQuote(j);
@@ -1387,26 +1432,7 @@ function viewQuote(){
       <button class="btn ghost sm" id="add-item" style="width:100%">＋ Add item</button>
       <button class="btn ghost sm" id="voice-edit" style="width:100%">🎤 By voice</button>
     </div>
-    <h2 style="margin-top:14px">Team on this job</h2>
-    <div class="card">${teamCardHTML(j)}</div>
-    <div class="card" style="margin-top:12px">
-      <div class="totrow"><span class="lbl">Materials cost</span><span>${rands(t.matCost)}</span></div>
-      <div class="totrow"><span class="lbl">Materials markup <input type="number" min="0" step="1" id="mk-mat" value="${t.matMk}" class="mkpct"/> %</span><span class="prof">${rands(t.matMarkupAmt)}</span></div>
-      <div class="totrow"><span class="lbl">Labour cost (${(Math.round(t.hours*10)/10)} ${t.usingTeam?"team hrs":"est. hrs"} @ ${rands(t.hours?t.labCost/t.hours:0)}/hr)</span><span>${rands(t.labCost)}</span></div>
-      <div class="totrow"><span class="lbl">Labour markup <input type="number" min="0" step="1" id="mk-lab" value="${t.labMk}" class="mkpct"/> %</span><span class="prof">${rands(t.labMarkupAmt)}</span></div>
-      <div class="totrow"><span class="lbl">${(()=>{ if(j.travel!=null) return `Travel (manual) <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">edit</button> <button class="del" id="travel-auto" style="color:var(--blue);font-size:13px">use distance</button>`; if(j.distanceKm!=null) return `Travel — <button class="del" id="edit-km" style="color:var(--blue);font-size:14px;font-weight:700">${j.distanceKm} km</button> × ${rands(s.travelRate||0)}/km × 2 <button class="del" id="travel-pin" style="color:var(--blue);font-size:13px">📍 set on map</button> <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">↻</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; return `Travel <button class="del" id="travel-pin" style="color:var(--blue);font-size:13px">📍 set on map</button> <button class="del" id="travel-calc" style="color:var(--blue);font-size:13px">calculate</button> <button class="del" id="edit-travel" style="color:var(--blue);font-size:13px">manual</button>`; })()}</span><span>${rands(t.travel)}</span></div>
-      ${(j.distanceKm!=null && (s.businessLocatedAs||j.locatedAs))?`<div class="hint" style="font-size:11.5px;margin:-2px 0 4px;line-height:1.4"><b>From:</b> ${esc((s.businessLocatedAs||"").slice(0,90))}<br><b>To:</b> ${esc((j.locatedAs||"").slice(0,90))}<br>Different from Google? Tap the <b>km</b> to type the correct number.</div>`:""}
-      <div class="totrow"><span class="lbl">Subtotal (excl. VAT)</span><span>${rands(t.sub)}</span></div>
-      <div class="totrow"><span class="lbl">VAT @ ${s.vat}%</span><span>${rands(t.vat)}</span></div>
-      <div class="totrow big"><span>Total</span><span>${rands(t.total)}</span></div>
-    </div>
-    ${(()=>{ const c=costToCompany(j); const profit=t.sub-c.total; const margin=t.sub>0?Math.round(profit/t.sub*100):0; const teamSummary=(j.team&&j.team.length)?j.team.map(x=>{const p=staffById(x.staffId); return p?(p.name.split(" ")[0]+" "+(x.hours||0)+"h"):"";}).filter(Boolean).join(" · "):"no team assigned"; return `<div class="costing"><h3>Job costing (for you)<span class="note">cost-to-company</span></h3>
-      <div class="crow"><span>Materials cost</span><span>${rands(c.mat)}</span></div>
-      <div class="crow"><span>Labour cost (${esc(teamSummary)})</span><span>${rands(c.labour)}</span></div>
-      <div class="crow"><span>Travel</span><span>${rands(c.travel)}</span></div>
-      <div class="crow"><span>Total cost to you</span><span><b>${rands(c.total)}</b></span></div>
-      <div class="crow"><span>Quoted (excl. VAT)</span><span>${rands(t.sub)}</span></div>
-      <div class="crow profit ${profit<0?"loss":""}"><span>${profit>=0?"Profit":"Loss"} on this job · ${margin}%</span><span>${rands(Math.abs(profit))}</span></div></div>`; })()}
+    ${isOwner() ? ownerQuoteDetail(j,t,s) : quoterQuoteDetail(j,t,s)}
     ${(j.photos&&j.photos.length)?`<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:16px 2px 2px"><input type="checkbox" id="inc-photos" checked style="width:auto;margin:0"/> Attach ${j.photos.length} before-photo${j.photos.length>1?"s":""} to the message</label>`:""}
     <button class="btn ghost sm" data-go="preview" style="width:100%;margin-top:14px">👁 Preview what the client sees</button>
     <div class="row" style="margin-top:10px">
@@ -1482,8 +1508,28 @@ function viewSent(){
   </div>`;
 }
 
+function accountCard(){
+  if(!acct) return "";
+  return `<h2>Account</h2><div class="card">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(acct.name||acct.email)}</div>
+        <div class="small muted">${esc(acct.email)}</div></div>
+      <span class="acct-badge">${isOwner()?"👑 Owner":"🔧 Quoter"}</span>
+    </div>
+    <div class="hint" style="margin-top:8px">Business: <b>${esc(acct.companyName||"")}</b></div>
+    ${isOwner()?`<div style="margin-top:12px"><label style="margin-top:0">Team join code — share with your staff so they can join as Quoters</label>
+      <div class="code-box">${esc(acct.joinCode||"")}</div>
+      <div class="hint">A quoter installs the app, taps “Join team”, and enters this code. They can build & send quotes but can't see your costs, markups, or settings.</div></div>`:""}
+    <button class="btn ghost" id="acct-logout" style="margin-top:12px">Log out</button>
+  </div>`;
+}
 function viewSettings(){
   const s=data.settings, tab=state.settingsTab;
+  if(isQuoter()){
+    return topbar("Settings","jobs")+`<div class="wrap">
+      <div class="note">You're signed in as a <b>Quoter</b>. Pricing, staff and business settings are managed by your owner.</div>
+      ${accountCard()}</div>`;
+  }
   const seg=`<div class="seg">
     <button data-tab="markups" class="${tab==="markups"?"on":""}">Business</button>
     <button data-tab="prices" class="${tab==="prices"?"on":""}">Prices</button>
@@ -1610,7 +1656,7 @@ function viewSettings(){
       </div>`;
     }
   }
-  return topbar("Settings","jobs")+`<div class="wrap">${seg}${body}</div>`;
+  return topbar("Settings","jobs")+`<div class="wrap">${seg}${body}${accountCard()}</div>`;
 }
 
 /* ---------------- EVENTS ---------------- */
@@ -1663,7 +1709,7 @@ function bind(){
     document.getElementById("f-save").onclick=()=>{
       const job={ id:uid(), number:nextNumber(), created:Date.now(), status:"draft", client:val("f-client"), address:val("f-address"),
         email:val("f-email"), phone:val("f-phone"), lang:(document.getElementById("f-lang")||{}).value||"en", sections:[], photos:[], lineItems:null, travel:null };
-      data.jobs.push(job); save(); state.activeSec=null; go("capture", job.id);
+      data.jobs.push(job); save(); touchJob(job.id); state.activeSec=null; go("capture", job.id);
     };
   }
 
@@ -1773,6 +1819,7 @@ function bind(){
   }
 
   if(state.view==="settings"){
+    const alo=document.getElementById("acct-logout"); if(alo) alo.onclick=doLogout;
     document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{ state.settingsTab=b.dataset.tab; render(); });
     const ss=document.getElementById("s-save");
     if(ss) ss.onclick=()=>{ const s=data.settings; const prevAddr=s.address;
@@ -1878,9 +1925,163 @@ function bind(){
   }
 }
 
+/* ================= CLOUD / AUTH (Supabase) ================= */
+const SB_URL="https://keurrweazeniggpngtuc.supabase.co";
+const SB_KEY="sb_publishable_MuZJgjBv1XAoWCNDsnhw4Q_hKZU9Yjd";
+let sb=null, acct=null, authed=false;
+let dirtyJobs=new Set(), syncTimer=null, syncing=false;
+function isOwner(){ return !!(acct && acct.role==="owner"); }
+function isQuoter(){ return !!(acct && acct.role==="quoter"); }
+
+async function bootApp(){
+  const app=document.getElementById("app");
+  app.innerHTML=`<div class="auth-loading"><div class="spin"></div><div>Loading TradeServ…</div></div>`;
+  try{
+    const mod=await import("https://esm.sh/@supabase/supabase-js@2");
+    sb=mod.createClient(SB_URL, SB_KEY, { auth:{ persistSession:true, autoRefreshToken:true } });
+  }catch(e){ app.innerHTML=`<div class="wrap" style="padding-top:60px"><div class="note">Couldn't load the login system — please check your internet connection and reload.</div></div>`; return; }
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    if(session){ await afterLogin(); } else { renderAuth(); }
+  }catch(e){ renderAuth(); }
+}
+
+async function afterLogin(){
+  try{ await loadAccount(); authed=true; state.view="jobs"; render(); }
+  catch(e){
+    if(String(e.message||e).indexOf("NO_PROFILE")>=0){ renderAuth("onboard"); }
+    else { renderAuth(); flash("Couldn't load your account: "+(e.message||e)); }
+  }
+}
+
+async function loadAccount(){
+  const { data:{ user } } = await sb.auth.getUser();
+  if(!user) throw new Error("NO_SESSION");
+  const { data:prof } = await sb.from("profiles").select("*").eq("id", user.id).maybeSingle();
+  if(!prof) throw new Error("NO_PROFILE");
+  const { data:co } = await sb.from("companies").select("*").eq("id", prof.company_id).single();
+  const { data:jobRows } = await sb.from("jobs").select("data").eq("company_id", prof.company_id);
+  acct={ uid:user.id, role:prof.role, name:prof.name||"", email:prof.email||user.email, companyId:prof.company_id, joinCode:co.join_code, companyName:co.name };
+  data={
+    settings:{...DEFAULT_SETTINGS, ...(co.settings||{})},
+    catalogue:(co.catalogue&&co.catalogue.length)?co.catalogue:cloneSeed(),
+    staff:(co.staff&&co.staff.length)?co.staff:cloneStaff(),
+    seq:co.seq||0,
+    jobs:(jobRows||[]).map(r=>r.data).filter(Boolean)
+  };
+  data.seq=Math.max(data.seq||0, ...data.jobs.map(j=>j.number||0), 0);
+  saveLocal();
+}
+
+function scheduleSync(){ if(syncTimer) clearTimeout(syncTimer); syncTimer=setTimeout(syncNow, 1200); }
+async function syncNow(){
+  if(!sb||!acct||syncing) return; syncing=true;
+  const ids=[...dirtyJobs];
+  try{
+    if(isOwner()){
+      await sb.from("companies").update({ settings:data.settings, catalogue:data.catalogue, staff:data.staff, seq:data.seq }).eq("id", acct.companyId);
+    }
+    for(const id of ids){
+      const j=data.jobs.find(x=>x.id===id); if(!j) continue;
+      await sb.from("jobs").upsert({ id:j.id, company_id:acct.companyId, number:j.number||null, status:j.status||"draft", client_name:j.client||"", data:j, created_by:acct.uid });
+    }
+    dirtyJobs.clear();
+  }catch(e){ /* offline — keep dirty, retry on next save/online */ }
+  syncing=false;
+}
+function touchJob(id){ if(acct&&id){ dirtyJobs.add(id); scheduleSync(); } }
+window.addEventListener("online", ()=>{ if(acct){ dirtyJobs.add(state.jobId); scheduleSync(); } });
+
+async function doLogout(){ try{ await sb.auth.signOut(); }catch(e){} acct=null; authed=false; dirtyJobs.clear(); renderAuth(); }
+
+/* ---- Auth screens ---- */
+let authMode="signin"; // signin | owner | join | onboard
+function renderAuth(mode){
+  if(mode) authMode=mode;
+  authed=false;
+  document.getElementById("app").innerHTML=viewAuth();
+  bindAuth();
+  window.scrollTo(0,0);
+}
+function viewAuth(){
+  const seg=`<div class="seg" style="margin:0 0 16px">
+    <button data-amode="signin" class="${authMode==="signin"?"on":""}">Sign in</button>
+    <button data-amode="owner" class="${authMode==="owner"?"on":""}">New business</button>
+    <button data-amode="join" class="${authMode==="join"?"on":""}">Join team</button></div>`;
+  let form;
+  if(authMode==="owner"){
+    form=`<div class="hint" style="margin-bottom:6px">Create your business account — you'll be the owner with full access.</div>
+      <label>Your name</label><input id="a-name" placeholder="e.g. John Haywood"/>
+      <label>Business name</label><input id="a-co" placeholder="e.g. AC Electrical"/>
+      <label>Email</label><input id="a-email" type="email" autocomplete="email" placeholder="you@email.com"/>
+      <label>Password</label><input id="a-pwd" type="password" autocomplete="new-password" placeholder="At least 6 characters"/>
+      <button class="btn primary" id="a-go">Create business account →</button>`;
+  } else if(authMode==="join"){
+    form=`<div class="hint" style="margin-bottom:6px">Join your company's account using the code your owner gave you.</div>
+      <label>Your name</label><input id="a-name" placeholder="e.g. Sipho M."/>
+      <label>Join code</label><input id="a-code" placeholder="6-character code" style="text-transform:uppercase;letter-spacing:2px;font-weight:700"/>
+      <label>Email</label><input id="a-email" type="email" autocomplete="email" placeholder="you@email.com"/>
+      <label>Password</label><input id="a-pwd" type="password" autocomplete="new-password" placeholder="At least 6 characters"/>
+      <button class="btn primary" id="a-go">Join team →</button>`;
+  } else if(authMode==="onboard"){
+    form=`<div class="note">Your login worked, but this account isn't linked to a business yet. Create one, or join an existing team with a code.</div>
+      <div class="row"><button class="btn primary" data-amode="owner">Create a business</button><button class="btn ghost" data-amode="join">Join with code</button></div>
+      <button class="btn ghost sm" id="a-logout" style="width:100%;margin-top:10px">Log out</button>`;
+  } else {
+    form=`<label>Email</label><input id="a-email" type="email" autocomplete="email" placeholder="you@email.com"/>
+      <label>Password</label><input id="a-pwd" type="password" autocomplete="current-password" placeholder="Your password"/>
+      <button class="btn primary" id="a-go">Sign in →</button>`;
+  }
+  return `<div class="topbar"><span class="logo">Trade<b>Serv</b></span></div>
+    <div class="wrap" style="max-width:440px;margin:0 auto">
+      <div class="auth-hero">
+        <div class="auth-mark"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#eaf6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.6 5.6l-6.4 6.4a2 2 0 1 0 2.8 2.8l6.4-6.4a4 4 0 0 0 5.6-5.6l-2.5 2.5-2-2 2.5-2.5z"/></svg></div>
+        <div class="auth-h1">Quote on site</div>
+        <div class="auth-sub">Talk through the job, send a priced quote before you leave.</div>
+      </div>
+      <div class="card">${authMode==="onboard"?"":seg}<div id="a-err" class="auth-err" style="display:none"></div>${form}</div>
+    </div>`;
+}
+function authErr(msg){ const e=document.getElementById("a-err"); if(e){ e.textContent=msg; e.style.display="block"; } }
+function bindAuth(){
+  document.querySelectorAll("[data-amode]").forEach(b=>b.onclick=()=>renderAuth(b.dataset.amode));
+  const lo=document.getElementById("a-logout"); if(lo) lo.onclick=doLogout;
+  const go2=document.getElementById("a-go");
+  if(go2) go2.onclick=async ()=>{
+    const email=(val("a-email")||"").trim(), pwd=val("a-pwd");
+    go2.disabled=true; const orig=go2.textContent; go2.textContent="Please wait…";
+    try{
+      if(authMode==="signin"){
+        const { error }=await sb.auth.signInWithPassword({ email, password:pwd });
+        if(error) throw error;
+        await afterLogin();
+      } else if(authMode==="owner" || authMode==="join"){
+        const name=val("a-name");
+        const co=val("a-co"), code=val("a-code");
+        if(authMode==="owner" && !co) throw new Error("Please enter your business name.");
+        if(authMode==="join" && !code) throw new Error("Please enter your join code.");
+        // sign up only if not already logged in (handles the post-confirmation onboarding case)
+        let session=(await sb.auth.getSession()).data.session;
+        if(!session){
+          const { data:sd, error }=await sb.auth.signUp({ email, password:pwd });
+          if(error) throw error;
+          session=sd.session;
+          if(!session){ authErr("Account created. Please check your email to confirm, then come back and sign in."); go2.disabled=false; go2.textContent=orig; authMode="signin"; return; }
+        }
+        if(authMode==="owner"){
+          const { error:e2 }=await sb.rpc("create_company",{ p_name:co, p_settings:{}, p_user_name:name }); if(e2) throw e2;
+        } else {
+          const { error:e2 }=await sb.rpc("join_company",{ p_code:code, p_user_name:name }); if(e2) throw e2;
+        }
+        await afterLogin();
+      }
+    }catch(e){ authErr(e.message||String(e)); go2.disabled=false; go2.textContent=orig; }
+  };
+}
+
 /* boot */
 document.addEventListener("focusin",(e)=>{ if(e.target&&e.target.matches&&e.target.matches("input,textarea")) lastFocusId=e.target.id||null; });
-render();
+bootApp();
 /* PWA: register service worker for offline open + installability */
 if("serviceWorker" in navigator){ window.addEventListener("load",()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); }); }
 </script>
