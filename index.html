@@ -167,6 +167,20 @@
   .add-row .add-go{width:40px;height:40px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:22px;font-weight:700;cursor:pointer;flex:0 0 auto}
   .add-row .add-go:active{background:var(--blue-dark)}
   .add-empty{text-align:center;color:var(--muted);padding:24px 8px;font-size:13px}
+  /* Manual-entry table on the Import tab */
+  .entrytbl{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .entryhead{display:flex;background:#eef2f8;padding:7px 0;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .entryhead > div{padding:0 8px}
+  .ec-d{flex:1.8;min-width:0}
+  .ec-s{flex:1.2;min-width:0}
+  .ec-p{width:84px;text-align:right}
+  .ec-x{width:34px;text-align:center}
+  .entryrow{display:flex;align-items:center;border-top:1px solid var(--line)}
+  .entryrow input{border:none;background:transparent;padding:9px 8px;font-size:14px;width:100%;border-radius:0}
+  .entryrow input.ec-p{text-align:right}
+  .entryrow input:focus{background:#f5f9ff;outline:1.5px solid var(--blue);outline-offset:-1px}
+  .entryrow input::placeholder{color:#b0b7c2;font-style:italic}
+  .entryrow .ec-x{background:none;border:none;color:var(--red);cursor:pointer;font-size:15px;padding:0}
   /* map pin-drop modal */
   #map-ov{position:fixed;inset:0;background:rgba(12,22,44,.7);display:none;align-items:stretch;justify-content:center;z-index:60}
   .map-card{background:#fff;width:100%;max-width:520px;height:100vh;display:flex;flex-direction:column}
@@ -324,7 +338,8 @@ const DEMO_SECTIONS = [
 
 /* ---------------- STATE / STORAGE ---------------- */
 let state = { view:"jobs", jobId:null, settingsTab:"markups", activeSec:null, search:"", sort:"new",
-  priceSelected:new Set(), priceSort:{key:"name", dir:"asc"}, priceSearch:"" };
+  priceSelected:new Set(), priceSort:{key:"name", dir:"asc"}, priceSearch:"",
+  entryRows:[{desc:"",supplier:"",price:""},{desc:"",supplier:"",price:""},{desc:"",supplier:"",price:""}] };
 let data = load();
 let lastFocusId = null;
 
@@ -1027,15 +1042,16 @@ function buildProposals(parsed){
     const m=matchCatItem(p.name);
     let status="new", oldCost=null;
     if(m){ oldCost=m.cost; status=Math.abs(m.cost-p.price)<0.005?"same":"change"; }
-    return { name:p.name, price:p.price, unit:p.unit||"ea", matchId:m?m.id:null, matchName:m?m.name:null, oldCost, status, approved: status!=="same" };
+    return { name:p.name, price:p.price, unit:p.unit||"ea", matchId:m?m.id:null, matchName:m?m.name:null, oldCost, status, approved: status!=="same", supplier: p.supplier||"" };
   });
 }
 function applyProposals(){
   let updated=0, added=0;
   (state.proposals||[]).forEach(p=>{
     if(!p.approved || p.status==="same") return;
-    if(p.matchId){ const c=data.catalogue.find(x=>x.id===p.matchId); if(c){ c.cost=p.price; c.updated=Date.now(); if(state.supplierName) c.supplier=state.supplierName; updated++; } }
-    else { data.catalogue.push({ id:"sup"+uid(), name:p.name, unit:p.unit||"ea", cost:p.price, labourHrs:0.5, kw:[p.name.toLowerCase()], supplier:(state.supplierName||""), updated:Date.now() }); added++; }
+    const sup = p.supplier || state.supplierName || "";
+    if(p.matchId){ const c=data.catalogue.find(x=>x.id===p.matchId); if(c){ c.cost=p.price; c.updated=Date.now(); if(sup) c.supplier=sup; updated++; } }
+    else { data.catalogue.push({ id:"sup"+uid(), name:p.name, unit:p.unit||"ea", cost:p.price, labourHrs:0.5, kw:[p.name.toLowerCase()], supplier:sup, updated:Date.now() }); added++; }
   });
   save(); state.proposals=null;
   flash("Updated "+updated+" price"+(updated===1?"":"s")+" · added "+added+" new item"+(added===1?"":"s"));
@@ -1535,9 +1551,23 @@ function viewSettings(){
         <label>Upload supplier file</label>
         <input type="file" id="sup-file" accept=".csv,.txt,text/csv,text/plain,image/*,application/pdf"/>
         <button class="btn amber" id="sup-sample" style="margin-top:12px">Try a sample supplier invoice</button>
-        <label style="margin-top:16px">…or paste price lines</label>
-        <textarea id="sup-paste" placeholder="Double socket, 72.50&#10;LED downlight, 88.00&#10;Surge protector, 380.00"></textarea>
-        <button class="btn primary" id="sup-read">Read prices →</button>
+        <label style="margin-top:16px">…or add items by hand</label>
+        <div class="entrytbl">
+          <div class="entryhead">
+            <div class="ec-d">Description</div>
+            <div class="ec-s">Supplier</div>
+            <div class="ec-p">Price (R)</div>
+            <div class="ec-x"></div>
+          </div>
+          ${(state.entryRows||[]).map((r,i)=>`<div class="entryrow">
+            <input class="ec-d" data-eri="${i}" data-erfield="desc" value="${esc(r.desc||"")}" placeholder="e.g. Double socket"/>
+            <input class="ec-s" data-eri="${i}" data-erfield="supplier" value="${esc(r.supplier||"")}" placeholder="(optional)"/>
+            <input class="ec-p" data-eri="${i}" data-erfield="price" type="text" inputmode="decimal" value="${esc(r.price||"")}" placeholder="0.00"/>
+            <button class="ec-x" data-erdel="${i}" title="Remove">✕</button>
+          </div>`).join("")}
+        </div>
+        <button class="btn ghost sm" id="sup-addrow" style="width:100%;margin-top:10px">+ Add row</button>
+        <button class="btn primary" id="sup-readtbl">Add to price list →</button>
       </div>`;
     }
   }
@@ -1772,7 +1802,18 @@ function bind(){
     const sn=document.getElementById("sup-name"); if(sn) sn.oninput=()=>{ state.supplierName=sn.value; };
     function showProposals(text){ const parsed=parsePriceLines(text); if(!parsed.length){ flash("Couldn't find any priced items in that."); return; } state.proposals=buildProposals(parsed); state.settingsTab="import"; render(); }
     const samp=document.getElementById("sup-sample"); if(samp) samp.onclick=()=>{ state.supplierName=state.supplierName||"ACME Wholesalers"; showProposals(SAMPLE_INVOICE); };
-    const rd=document.getElementById("sup-read"); if(rd) rd.onclick=()=>{ const t=val("sup-paste"); if(!t){ flash("Paste some price lines first, or use the sample."); return; } showProposals(t); };
+    // ensure at least 3 rows visible
+    if(!state.entryRows || !state.entryRows.length){ state.entryRows=[{desc:"",supplier:"",price:""},{desc:"",supplier:"",price:""},{desc:"",supplier:"",price:""}]; }
+    document.querySelectorAll("[data-eri]").forEach(inp=>inp.oninput=()=>{ const i=+inp.dataset.eri, f=inp.dataset.erfield; if(state.entryRows[i]) state.entryRows[i][f]=inp.value; });
+    document.querySelectorAll("[data-erdel]").forEach(b=>b.onclick=()=>{ state.entryRows.splice(+b.dataset.erdel,1); if(!state.entryRows.length) state.entryRows=[{desc:"",supplier:"",price:""}]; render(); });
+    const ar=document.getElementById("sup-addrow"); if(ar) ar.onclick=()=>{ state.entryRows.push({desc:"",supplier:"",price:""}); render(); };
+    const rdt=document.getElementById("sup-readtbl"); if(rdt) rdt.onclick=()=>{
+      const filled=(state.entryRows||[]).filter(r=>(r.desc||"").trim() && (r.price||"").toString().trim());
+      if(!filled.length){ flash("Add at least one row with a description and a price."); return; }
+      const parsed=filled.map(r=>({ name:r.desc.trim(), price:parseCost(r.price), unit:"ea", supplier:(r.supplier||"").trim() }));
+      state.proposals=buildProposals(parsed); state.entryRows=[{desc:"",supplier:"",price:""},{desc:"",supplier:"",price:""},{desc:"",supplier:"",price:""}];
+      state.settingsTab="import"; render();
+    };
     const sf=document.getElementById("sup-file"); if(sf) sf.onchange=async (e)=>{
       const f=e.target.files[0]; if(!f) return;
       const isText=/\.(csv|txt)$/i.test(f.name) || /text|csv/.test(f.type);
