@@ -1157,7 +1157,7 @@ const app=()=>document.getElementById("app");
 function topbar(title, backView){
   const left = backView ? `<button class="back" data-go="${backView}">‹</button>` : `<span class="logo">Trade<b>Serv</b></span>`;
   return `<div class="topbar">${left}<h1>${esc(title)}</h1><span class="tb-demo">DEMO</span>
-    <button class="tb-mic" data-voice>🎤 Talk</button></div>`;
+    <button class="tb-mic" data-voice>Talk</button></div>`;
 }
 function render(){
   let html="";
@@ -1250,7 +1250,7 @@ function viewCapture(){
   const secs=(j.sections||[]).map(sec=>`<div class="sec" data-sec="${sec.id}">
       <div class="sec-top">
         <input class="sec-title" data-sectitle="${sec.id}" value="${esc(sec.title)}" placeholder="Area name"/>
-        <button class="sec-mic" data-secmic="${sec.id}">🎤 Talk</button>
+        <button class="sec-mic" data-secmic="${sec.id}">Talk</button>
         <button class="sec-del" data-secdel="${sec.id}">✕</button>
       </div>
       <textarea data-sectext="${sec.id}" placeholder="Say or type what's needed in ${esc(sec.title||"this area")}…">${esc(sec.text)}</textarea>
@@ -1458,7 +1458,7 @@ function viewSettings(){
       <label>Labour markup (%)</label><input id="s-labourmk" type="number" value="${s.labourMarkup}"/>
       <div class="hint">Default markup on labour cost (you can override per job on the quote).</div>
       <label>Travel rate (R per km)</label><input id="s-travelrate" type="number" step="0.5" value="${s.travelRate||0}"/>
-      <div class="hint">Charged round trip (×2). Driving distance is calculated from your business address to the job site address.${(s.businessLat!=null)?` <span style="color:var(--green)">· Business located ✓</span>`:` <span style="color:var(--red)">· Business not located yet (set address above and save)</span>`}</div>
+      <div class="hint">Charged round trip (×2). Driving distance is calculated from your business address to the job site address.</div>
       <label>VAT (%)</label><input id="s-vat" type="number" value="${s.vat}"/>
       <label>Your spoken language (for the 🎤 mic)</label>
       <select id="s-spoken">${LANGS.map(l=>`<option value="${l.sr}"${(s.spokenLang||"en-ZA")===l.sr?" selected":""}>${esc(l.name)}</option>`).join("")}</select>
@@ -1534,7 +1534,7 @@ function viewSettings(){
         <label>Supplier name (optional)</label><input id="sup-name" value="${esc(state.supplierName||"")}" placeholder="e.g. ACME Wholesalers"/>
         <label>Upload supplier file</label>
         <input type="file" id="sup-file" accept=".csv,.txt,text/csv,text/plain,image/*,application/pdf"/>
-        <button class="btn amber" id="sup-sample" style="margin-top:12px">⚡ Try a sample supplier invoice</button>
+        <button class="btn amber" id="sup-sample" style="margin-top:12px">Try a sample supplier invoice</button>
         <label style="margin-top:16px">…or paste price lines</label>
         <textarea id="sup-paste" placeholder="Double socket, 72.50&#10;LED downlight, 88.00&#10;Surge protector, 380.00"></textarea>
         <button class="btn primary" id="sup-read">Read prices →</button>
