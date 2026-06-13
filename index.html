@@ -121,7 +121,10 @@
   .sec-title{flex:1;font-weight:700;font-size:16px;padding:9px 11px}
   .sec-mic{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:var(--amber);color:#06283b;border:none;border-radius:10px;padding:9px 12px;font-weight:700;font-size:13px;cursor:pointer}
   .sec-mic:active{background:var(--amber-dark)}
-  .sec-del{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0 4px}
+  .sec-talk{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:9px;background:var(--grad-amber);color:#04263b;border:none;border-radius:11px;padding:11px;font-weight:700;font-size:14px;cursor:pointer;box-shadow:var(--shadow-amber);transition:transform .12s,filter .12s;font-family:inherit}
+  .sec-talk:active{transform:scale(.98)}
+  .sec-talk:hover{filter:brightness(1.05)}
+  .sec-del{background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:0 6px;align-self:flex-start;margin-top:4px}
   /* quote */
   .qsec-head{display:flex;align-items:center;gap:8px;margin:16px 0 4px}
   .qsec-head .t{flex:1;font-weight:800;font-size:15px;color:var(--blue)}
@@ -1328,11 +1331,12 @@ function viewCapture(){
   const j=currentJob();
   const secs=(j.sections||[]).map(sec=>`<div class="sec" data-sec="${sec.id}">
       <div class="sec-top">
-        <input class="sec-title" data-sectitle="${sec.id}" value="${esc(sec.title)}" placeholder="Area name"/>
-        <button class="sec-mic" data-secmic="${sec.id}">Talk</button>
+        <input class="sec-title" data-sectitle="${sec.id}" value="${esc(sec.title)}" placeholder="Area name (e.g. Kitchen)"/>
         <button class="sec-del" data-secdel="${sec.id}">✕</button>
       </div>
-      <textarea data-sectext="${sec.id}" placeholder="Say or type what's needed in ${esc(sec.title||"this area")}…">${esc(sec.text)}</textarea>
+      <label style="margin:6px 0 5px">What needs doing here</label>
+      <textarea data-sectext="${sec.id}" placeholder="Say or type the work needed in ${esc(sec.title||"this area")}…">${esc(sec.text)}</textarea>
+      <button class="sec-talk" data-secmic="${sec.id}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg> Talk to describe this area</button>
     </div>`).join("");
   const emptyState=(j.sections&&j.sections.length)?"":`<div class="empty small">No areas yet. Add one below — e.g. Kitchen, then tap its 🎤 and describe the work.</div>`;
   return topbar(j.client||"Capture","jobs")+`<div class="wrap">
