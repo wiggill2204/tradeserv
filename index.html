@@ -258,7 +258,7 @@ const DEFAULT_SETTINGS = {
   logo: "", logoRatio: 0,
   quotePrefix: "Q",
   spokenLang: "en-ZA",
-  materialMarkup: 25, labourCost: 200, labourMarkup: 75, travelRate: 8, travelFee: 250, vat: 15
+  materialMarkup: 25, labourMarkup: 75, travelRate: 8, travelFee: 250, vat: 15
 };
 
 const SEED_CATALOGUE = [
@@ -492,12 +492,12 @@ function totals(job){
   (job.lineItems||[]).forEach(li=>{ matCost+=li.cost*li.qty; estHours+=li.labourHrs*li.qty; });
   const matMarkupAmt = matCost * (mPct/100);
   const matSell = matCost + matMarkupAmt;
-  // labour: use team cost if assigned, else estimated hours × labourCost
+  // labour: use team cost if assigned, else estimated hours × average staff rate
   const teamHours=(job.team||[]).reduce((a,t)=>a+(t.hours||0),0);
   const teamCost=(job.team||[]).reduce((a,t)=>{ const p=staffById(t.staffId); return a+(t.hours||0)*((p&&p.rate)||0); },0);
   const usingTeam = teamHours>0;
   const hours = usingTeam ? teamHours : estHours;
-  const labCost = usingTeam ? teamCost : estHours*(s.labourCost||0);
+  const labCost = usingTeam ? teamCost : estHours*avgStaffRate();
   const labMarkupAmt = labCost * (lPct/100);
   const labSell = labCost + labMarkupAmt;
   // travel & totals
@@ -511,6 +511,7 @@ function totals(job){
 }
 function lineSell(li, job){ return li.cost*(1+ matMkPct(job)/100); }
 function staffById(id){ return data.staff.find(p=>p.id===id); }
+function avgStaffRate(){ const s=data.staff||[]; if(!s.length) return 0; const t=s.reduce((a,p)=>a+(p.rate||0),0); return t/s.length; }
 function teamCardHTML(j){
   const assigned=(j.team&&j.team.length)?j.team.map(t=>{ const p=staffById(t.staffId); if(!p) return ""; const cost=(t.hours||0)*(p.rate||0);
     return `<div class="teamrow"><div class="nm"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.role||"")} @ ${rands(p.rate)}/hr</div></div><div class="hrs"><input type="number" min="0" step="0.5" data-teamhrs="${esc(t.staffId)}" value="${t.hours||0}"/></div><div class="cost">${rands(cost)}</div><button class="del" data-teamdel="${esc(t.staffId)}">✕</button></div>`;
@@ -684,7 +685,7 @@ function costToCompany(job){
   (job.team||[]).forEach(t=>{ const p=staffById(t.staffId); if(p){ teamHours+=(t.hours||0); teamLabour+=(t.hours||0)*(p.rate||0); } });
   const usingTeam = teamHours>0;
   const hours = usingTeam ? teamHours : estHours;
-  const labour = usingTeam ? teamLabour : estHours*(s.labourCost||0);
+  const labour = usingTeam ? teamLabour : estHours*avgStaffRate();
   const travel=travelCost(job);
   return { mat, hours, labour, travel, total: mat+labour+travel, usingTeam };
 }
@@ -1308,7 +1309,7 @@ function viewQuote(){
   }
   function secBlock(g){
     let mat=0,hrs=0; g.items.forEach(li=>{mat+=lineSell(li,j)*li.qty;hrs+=li.labourHrs*li.qty;});
-    const billableRate=(s.labourCost||0)*(1+labMkPct(j)/100);
+    const billableRate=avgStaffRate()*(1+labMkPct(j)/100);
     const sub=mat+hrs*billableRate;
     return `<div class="qsec-head"><span class="t">${esc(g.title)}</span>
         <button class="m" data-qsecadd="${g.id}">＋ add</button>
@@ -1454,8 +1455,6 @@ function viewSettings(){
       <label>Quote number prefix</label><input id="s-prefix" value="${esc(s.quotePrefix||"Q")}"/>
       <label>Material markup (%)</label><input id="s-markup" type="number" value="${s.materialMarkup}"/>
       <div class="hint">Default markup on materials (you can override per job on the quote).</div>
-      <label>Labour cost (R per hour)</label><input id="s-labour" type="number" value="${s.labourCost}"/>
-      <div class="hint">Default cost-to-company per hour (used when no specific team is assigned).</div>
       <label>Labour markup (%)</label><input id="s-labourmk" type="number" value="${s.labourMarkup}"/>
       <div class="hint">Default markup on labour cost (you can override per job on the quote).</div>
       <label>Travel rate (R per km)</label><input id="s-travelrate" type="number" step="0.5" value="${s.travelRate||0}"/>
@@ -1711,7 +1710,7 @@ function bind(){
     if(ss) ss.onclick=()=>{ const s=data.settings; const prevAddr=s.address;
       s.company=val("s-company"); s.regName=val("s-regname"); s.address=val("s-address"); s.bank=val("s-bank"); s.tagline=val("s-tagline"); s.phone=val("s-phone"); s.email=val("s-email"); s.vatNo=val("s-vatno"); s.quotePrefix=val("s-prefix")||"Q";
       const sp=document.getElementById("s-spoken"); if(sp) s.spokenLang=sp.value;
-      s.materialMarkup=num("s-markup"); s.labourCost=num("s-labour"); s.labourMarkup=num("s-labourmk");
+      s.materialMarkup=num("s-markup"); s.labourMarkup=num("s-labourmk");
       const tr=document.getElementById("s-travelrate"); if(tr) s.travelRate=parseFloat(tr.value)||0;
       s.vat=num("s-vat"); save(); flash("Settings saved");
       // re-geocode business if address changed or never located
