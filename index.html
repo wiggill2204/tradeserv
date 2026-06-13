@@ -1299,7 +1299,6 @@ function viewCapture(){
       <input type="file" id="f-photo" accept="image/*" capture="environment"/>
       ${(j.photos&&j.photos.length)?`<div class="thumbs">${j.photos.map(p=>`<img src="${p}"/>`).join("")}</div>`:""}
     </div>
-    <button class="btn ghost sm" id="demo-fill" style="width:100%;margin-top:4px">⚡ Fill with a sample job</button>
     <button class="btn primary" id="to-quote">Build the quote →</button>
   </div>`;
 }
@@ -1550,13 +1549,12 @@ function viewSettings(){
         <label>Supplier name (optional)</label><input id="sup-name" value="${esc(state.supplierName||"")}" placeholder="e.g. ACME Wholesalers"/>
         <label>Upload supplier file</label>
         <input type="file" id="sup-file" accept=".csv,.txt,text/csv,text/plain,image/*,application/pdf"/>
-        <button class="btn amber" id="sup-sample" style="margin-top:12px">Try a sample supplier invoice</button>
         <label style="margin-top:16px">…or add items by hand</label>
         <div class="entrytbl">
           <div class="entryhead">
             <div class="ec-d">Description</div>
             <div class="ec-s">Supplier</div>
-            <div class="ec-p">Price (R)</div>
+            <div class="ec-p">Price (R, excl VAT)</div>
             <div class="ec-x"></div>
           </div>
           ${(state.entryRows||[]).map((r,i)=>`<div class="entryrow">
@@ -1670,7 +1668,6 @@ function bind(){
       j.sections=j.sections||[]; const sec={id:uid(),title:"",text:""}; j.sections.push(sec); state.activeSec=sec.id; save(); render();
       setTimeout(()=>{ const inp=document.querySelector('[data-sectitle="'+sec.id+'"]'); if(inp){ inp.focus(); inp.placeholder="Name this area (e.g. Outside)"; } }, 40);
     };
-    document.getElementById("demo-fill").onclick=()=>{ j.sections=DEMO_SECTIONS.map(s=>({id:uid(),title:s.title,text:s.text})); save(); render(); };
     bindTeam(j);
     const ph=document.getElementById("f-photo");
     if(ph) ph.onchange=(e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ j.photos=j.photos||[]; j.photos.push(r.result); save(); render(); }; r.readAsDataURL(f); };
@@ -1801,7 +1798,6 @@ function bind(){
     // ---- Import tab ----
     const sn=document.getElementById("sup-name"); if(sn) sn.oninput=()=>{ state.supplierName=sn.value; };
     function showProposals(text){ const parsed=parsePriceLines(text); if(!parsed.length){ flash("Couldn't find any priced items in that."); return; } state.proposals=buildProposals(parsed); state.settingsTab="import"; render(); }
-    const samp=document.getElementById("sup-sample"); if(samp) samp.onclick=()=>{ state.supplierName=state.supplierName||"ACME Wholesalers"; showProposals(SAMPLE_INVOICE); };
     // ensure at least 3 rows visible
     if(!state.entryRows || !state.entryRows.length){ state.entryRows=[{desc:"",supplier:"",price:""},{desc:"",supplier:"",price:""},{desc:"",supplier:"",price:""}]; }
     document.querySelectorAll("[data-eri]").forEach(inp=>inp.oninput=()=>{ const i=+inp.dataset.eri, f=inp.dataset.erfield; if(state.entryRows[i]) state.entryRows[i][f]=inp.value; });
